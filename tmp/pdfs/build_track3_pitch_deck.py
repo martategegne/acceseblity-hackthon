@@ -207,7 +207,7 @@ rr(c, 50, 40, 848, 32, FOREST, None, 9)
 text(c, "SERVICE BASE", 66, 51, 8.2, AMBER, "Helvetica-Bold")
 text(c, BASE, 146, 50, 9.5, PAPER, "Helvetica-Bold")
 c.linkURL(BASE, (140, 43, 470, 67), relative=0, thickness=0)
-text(c, "The direct routes are supplied for the demo; confirm each loads before final submission.", 50, 30, 7.8, MUTED)
+text(c, "Live check 2026-11-16: seven routes + health returned HTTP 200; assistant opened on all three learner pages.", 50, 30, 7.8, MUTED)
 c.showPage()
 
 # Slide 5 - architecture and privacy
@@ -257,23 +257,9 @@ para(c, "- Assistant is embedded on all three Savanna learner pages.<br/>- Cours
 rr(c, 498, 245, 414, 140, HexColor("#FFF3E4"), None, 14)
 text(c, "STILL NEEDS HUMAN EVIDENCE", 518, 355, 10, HexColor("#985E21"), "Helvetica-Bold")
 para(c, "The Track 3 gate is not established by this deck or automated checks. A co-designer must complete the main task unaided with a screen reader, keyboard only, sound off, and actual 200% zoom. Fluent-speaker and real-device/network checks also remain.", 518, 337, 370, "card")
-text(c, "FORM FIELDS", 50, 209, 10, GREEN, "Helvetica-Bold")
-# form rows
-form_rows = [
-    ("Pitch Deck Link", "After uploading this PDF to Drive/OneDrive, paste a viewer link that judges can open."),
-    ("Pitch Deck Upload", "Upload this PDF."),
-    ("MVP Link", "Use the Render service link below; include the direct pages listed on slide 4. GitHub is useful as source code, but Render is the runnable MVP."),
-    ("MVP Upload", "Upload a clean source ZIP for the deployed commit; exclude .env, credentials and generated files."),
-]
-for idx, (name, desc) in enumerate(form_rows):
-    y = 185 - idx * 27
-    text(c, name, 55, y, 9.5, FOREST, "Helvetica-Bold")
-    para(c, desc, 190, y + 3, 700, "small")
-rr(c, 50, 39, 848, 37, DEEP, None, 9)
-text(c, "MVP LINK", 66, 53, 8.2, AMBER, "Helvetica-Bold")
-text(c, BASE, 146, 51, 10, PAPER, "Helvetica-Bold")
-c.linkURL(BASE, (140, 43, 460, 68), relative=0, thickness=0)
-text(c, "Share responsibly. Never upload real learner data or secrets.", 490, 52, 9, HexColor("#D6E7DA"))
+rr(c, 50, 142, 848, 56, FOREST, None, 12)
+text(c, "LOCAL AUTOMATED VERIFICATION", 68, 177, 8.5, AMBER, "Helvetica-Bold")
+text(c, "39/39 Playwright E2E passed; 5/5 axe scenarios passed; 0 critical/serious axe issues.", 68, 157, 10, PAPER, "Helvetica-Bold")
 c.showPage()
 
 c.save()

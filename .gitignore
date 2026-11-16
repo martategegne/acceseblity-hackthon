@@ -8,3 +8,4 @@ api/escalations.sqlite3
 node_modules/
 playwright-report/
 test-results/
+output/pdf/savanna-track3-pitch-deck.pdf
