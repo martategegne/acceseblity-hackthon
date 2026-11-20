@@ -89,6 +89,15 @@ test("keyboard-only lesson flow reaches language, answer citation, and tutor req
   await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe("am");
   await expect(assistant.locator("#lesson-explore-list button").first()).toHaveAttribute("lang", "am");
   await page.keyboard.press("Tab");
+  const exploreSummary = assistant.locator("#lesson-explore > summary");
+  await expect(exploreSummary).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => assistant.locator("#lesson-explore").evaluate((element) => element.open)).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => assistant.locator("#lesson-explore").evaluate((element) => element.open)).toBe(false);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => assistant.locator("#lesson-explore").evaluate((element) => element.open)).toBe(true);
+  await page.keyboard.press("Tab");
   const firstSuggestion = assistant.locator("#lesson-explore-list button").first();
   await expect(firstSuggestion).toBeFocused();
   await page.keyboard.press("Enter");
