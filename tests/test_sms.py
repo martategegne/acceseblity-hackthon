@@ -58,6 +58,28 @@ def test_sms_inbound_english_question(client):
     assert "Course s2" in res.text
 
 
+def test_sms_course_question_contributes_only_anonymous_aggregate(client, monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "none")
+    monkeypatch.setenv("OFFLINE_MODE", "true")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    question = sections[0]["titles"]["en"]
+    sender = "+251911223344"
+    response = client.post("/sms/inbound", json={"from": sender, "text": question})
+    assert response.status_code == 200
+
+    with connect() as db:
+        rows = [dict(row) for row in db.execute("SELECT * FROM course_gap_aggregates")]
+    assert len(rows) == 1
+    assert rows[0]["language"] == "en"
+    assert rows[0]["topic_id"] == sections[0]["id"]
+    assert rows[0]["outcome"] == "answered"
+    assert rows[0]["count"] == 1
+    assert question not in json.dumps(rows)
+    assert sender not in json.dumps(rows)
+
+
 def test_sms_inbound_amharic_question(client):
     res = client.post("/sms/inbound", json={"from": "+251911000000", "text": "አርቴፊሻል ኢንተለጀንስ የሰዎችን ሥራ ይተካል?"})
     assert res.status_code == 200

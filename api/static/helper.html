@@ -36,6 +36,24 @@
     .screen-demo video { width: 100%; max-height: 60vh; background: #17251d; }
     audio { display: block; width: min(100%, 32rem); margin-block: .75rem; }
     textarea { min-height: 7rem; resize: vertical; }
+    .radar { margin-block: 2rem; padding-block: 1.25rem; border-block: 2px solid #174b2d; }
+    .radar-intro { max-width: 66ch; color: #405247; }
+    .radar-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1rem; }
+    .radar-toolbar button { color: #fff; background: #174b2d; border: 2px solid #174b2d; }
+    .radar-toolbar button:disabled { cursor: wait; }
+    .radar-status { min-height: 1.5em; font-weight: 650; }
+    .radar-results[hidden] { display: none; }
+    .radar-results { display: grid; gap: 1.5rem; }
+    .radar-results h3 { margin-block: 0 .5rem; color: #174b2d; font-size: 1.15rem; }
+    .radar-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #cbd8cd; background: #fff; }
+    .radar-table { width: 100%; border-collapse: collapse; text-align: start; }
+    .radar-table caption { padding: .75rem; text-align: start; font-weight: 650; color: #405247; }
+    .radar-table th, .radar-table td { padding: .65rem .75rem; border-block-start: 1px solid #d8e4da; text-align: start; vertical-align: top; }
+    .radar-table thead th { background: #edf3e9; color: #18251d; }
+    .radar-table td:not(:first-child), .radar-table th:not(:first-child) { text-align: end; font-variant-numeric: tabular-nums; }
+    .radar-note { padding-inline-start: .85rem; border-inline-start: 3px solid #9c4f24; color: #405247; }
+    .radar-empty { padding: 1rem; border: 1px dashed #829481; background: #f8faf7; }
+    @media (max-width: 640px) { .radar { margin-block: 1.5rem; } .radar-table { min-width: 42rem; } }
     @media (max-width: 640px) {
       .toolbar { padding: 1rem; }
       .toolbar label { flex-basis: 100%; }
@@ -53,6 +71,40 @@
       <button type="button" id="feedback-refresh">Review answer feedback</button>
     </div>
     <p id="status" role="status" aria-live="polite"></p>
+    <section class="radar" aria-labelledby="radar-heading">
+      <h2 id="radar-heading">Teacher Course Gap Radar</h2>
+      <p class="radar-intro" id="radar-description">Review anonymous course-question outcomes from the last 30 days. Only grouped counts are stored; prompts and learner identities are not collected for this report. Counts below three are hidden.</p>
+      <div class="radar-toolbar">
+        <button type="button" id="radar-refresh" aria-describedby="radar-description">Load course gap report</button>
+        <span>Requires the helper token above.</span>
+      </div>
+      <p class="radar-status" id="radar-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <div class="radar-results" id="radar-results" hidden>
+        <section aria-labelledby="radar-language-heading">
+          <h3 id="radar-language-heading">Question outcomes by language</h3>
+          <div class="radar-table-wrap" tabindex="0" aria-label="Scrollable language outcome table">
+            <table class="radar-table" id="radar-language-table">
+              <caption>Daily aggregates in the last 30 days. Cells with fewer than three questions are suppressed.</caption>
+              <thead><tr><th scope="col">Language</th><th scope="col">Questions</th><th scope="col">Answered</th><th scope="col">Not found</th><th scope="col">Off topic</th><th scope="col">Safety refusal</th></tr></thead>
+              <tbody id="radar-language-body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section aria-labelledby="radar-topics-heading">
+          <h3 id="radar-topics-heading">Most answered lesson topics</h3>
+          <div class="radar-table-wrap"><table class="radar-table"><caption>Only grounded answers linked to a lesson are counted.</caption><thead><tr><th scope="col">Lesson topic</th><th scope="col">Answered questions</th></tr></thead><tbody id="radar-topics-body"></tbody></table></div>
+          <p class="radar-empty" id="radar-topics-empty" hidden>No lesson topic has enough activity to display yet. Counts below three are hidden.</p>
+        </section>
+        <section aria-labelledby="radar-gaps-heading">
+          <h3 id="radar-gaps-heading">Closest lesson candidates for “not found” questions</h3>
+          <p class="radar-note">These are unverified retrieval candidates below the answer threshold. They are not confirmed topics, answers, or citations; use them only as a prompt to review course coverage.</p>
+          <div class="radar-table-wrap"><table class="radar-table"><caption>Counts below three are hidden. Off-topic and safety-refusal questions do not get a lesson candidate.</caption><thead><tr><th scope="col">Possible lesson to review</th><th scope="col">Not-found candidates</th></tr></thead><tbody id="radar-gaps-body"></tbody></table></div>
+          <p class="radar-empty" id="radar-gaps-empty" hidden>No lesson candidate has enough not-found activity to display.</p>
+          <p class="radar-note" id="radar-unmatched-note" hidden></p>
+        </section>
+        <p class="radar-empty" id="radar-no-data" hidden>No anonymized activity has been collected in this period. No sample data is shown.</p>
+      </div>
+    </section>
     <section aria-labelledby="feedback-heading"><h2 id="feedback-heading">Answer and source feedback</h2><ul id="feedback-list" aria-label="Learner answer feedback"></ul></section>
     <ul id="tickets" aria-label="Waiting learner requests"></ul>
   </main>
@@ -61,6 +113,8 @@
     const status = document.getElementById("status");
     const list = document.getElementById("tickets");
     const feedbackList = document.getElementById("feedback-list");
+    const radarStatus = document.getElementById("radar-status");
+    const radarResults = document.getElementById("radar-results");
     const authHeaders = () => ({ "X-Helper-Token": tokenField.value });
     const screenPeers = new Map();
 
@@ -194,6 +248,66 @@
       } catch (error) { status.textContent = error.message; }
     }
 
+    function addRadarCell(row, text, language) {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (language) { cell.lang = language; cell.dir = "auto"; }
+      row.append(cell);
+    }
+
+    function visibleCount(value) {
+      if (value?.suppressed) return "Fewer than 3 (hidden)";
+      return String(value?.count ?? 0);
+    }
+
+    function renderTopicRows(body, items, empty) {
+      body.replaceChildren();
+      empty.hidden = items.length > 0;
+      for (const topic of items) {
+        const row = document.createElement("tr");
+        addRadarCell(row, topic.title || topic.topicId);
+        addRadarCell(row, String(topic.count));
+        body.append(row);
+      }
+    }
+
+    async function loadCourseGapRadar() {
+      const button = document.getElementById("radar-refresh");
+      const languageBody = document.getElementById("radar-language-body");
+      const topicsBody = document.getElementById("radar-topics-body");
+      const gapsBody = document.getElementById("radar-gaps-body");
+      button.disabled = true;
+      radarResults.hidden = true;
+      radarStatus.textContent = "Loading anonymous course aggregates…";
+      try {
+        const response = await fetch("/api/v1/helper/course-gap-radar", { headers: authHeaders() });
+        if (!response.ok) throw new Error(response.status === 401 ? "Enter a valid helper token to view this report." : response.status === 503 ? "Helper access is disabled until a helper token is configured." : "The course gap report could not be loaded.");
+        const report = await response.json();
+        languageBody.replaceChildren();
+        for (const entry of report.byLanguage || []) {
+          const row = document.createElement("tr");
+          addRadarCell(row, entry.languageName, entry.language);
+          addRadarCell(row, visibleCount(entry.total));
+          addRadarCell(row, visibleCount(entry.outcomes.answered));
+          addRadarCell(row, visibleCount(entry.outcomes.not_found));
+          addRadarCell(row, visibleCount(entry.outcomes.off_topic));
+          addRadarCell(row, visibleCount(entry.outcomes.refused));
+          languageBody.append(row);
+        }
+        renderTopicRows(topicsBody, report.topAnsweredTopics || [], document.getElementById("radar-topics-empty"));
+        renderTopicRows(gapsBody, report.notFoundCandidates || [], document.getElementById("radar-gaps-empty"));
+        const unmatched = document.getElementById("radar-unmatched-note");
+        const unmatchedCount = report.unmatchedNotFoundCount;
+        unmatched.hidden = !unmatchedCount || (unmatchedCount.count === 0 && !unmatchedCount.suppressed);
+        if (!unmatched.hidden) unmatched.textContent = `Not-found questions with no lesson candidate: ${visibleCount(unmatchedCount)}.`;
+        document.getElementById("radar-no-data").hidden = report.hasActivity;
+        radarResults.hidden = false;
+        radarStatus.textContent = report.hasActivity ? "Course gap report loaded. Small groups are hidden." : "Report loaded; no activity is available yet.";
+      } catch (error) {
+        radarStatus.textContent = error.message;
+      } finally { button.disabled = false; }
+    }
+
     function makeTicket(ticket) {
       const item = document.createElement("li"); item.className = "ticket";
       const title = document.createElement("h2"); title.textContent = `${ticket.type === "accommodation" ? "Accommodation request" : "Request"} ${ticket.ticketId}`; item.append(title);
@@ -303,6 +417,7 @@
 
     document.getElementById("refresh").addEventListener("click", loadTickets);
     document.getElementById("feedback-refresh").addEventListener("click", loadFeedback);
+    document.getElementById("radar-refresh").addEventListener("click", loadCourseGapRadar);
   </script>
 </body>
 </html>
