@@ -1,6 +1,10 @@
 # Accessibility gate: co-designer manual run
 
-**Co-designer report received (2026-11-20):** The project co-designer reports completing a check and that the flow worked. The session date, URL/revision, consent, device/browser, assistive technology, actual zoom, sound condition, and task-by-task observations were not supplied. Formal evidence for keyboard-only, NVDA/TalkBack, sound-off, and real 200% zoom remains incomplete; automated evidence below is not a substitute and does not establish WCAG 2.2 AA conformance.
+**Co-designer report received (2026-11-20; original session date/time unknown):** The co-designer reports that English and Amharic answers cited the same lesson section, the requested off-topic response appeared, and “Talk to a person” opened the handoff form. No ticket was submitted, so ticket submission and a human reply were not checked. The co-designer identifier is intentionally blank. Consent during the original session is unknown; permission to record this summary was given in a follow-up. The session URL was reported as `https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html`; the deployed revision is unknown.
+
+Devices mentioned were a Samsung Galaxy A04s (Android version unknown), a Windows 10 PC (make/model unknown), and a current device with make/OS version unknown. TalkBack and NVDA were mentioned, but versions and whether either was used for the reported tasks are unknown. Browser/version, viewport, actual zoom, sound setting, task independence, barriers, and follow-up were not recorded. Keyboard-only, screen-reader, sound-off, and actual 200% zoom results remain **not tested or unknown**. Do not infer them from the co-designer’s general “flow worked” report or from automated checks.
+
+Separate hosted technical check on 2026-11-20 confirmed the page was ready, English and Amharic course answers used the same lesson citation, the requested off-topic message appeared, and the handoff form opened. No ticket was submitted. The hosted SMS simulator returned a response to `HELP`, but no SMS ticket/reply or carrier delivery was tested. This technical check is not a co-designer result and does not establish accessibility conformance.
 
 ## Pitch-day co-designer task card
 
@@ -44,14 +48,17 @@ For each task, choose one outcome: **completed independently / completed with he
 
 | Task / condition | Outcome | Steps where the co-designer hesitated or needed help | Exact barriers and comments (co-designer’s words) | Follow-up fix and owner | Retest result |
 |---|---|---|---|---|---|
-| One-minute keyboard task |  |  |  |  |  |
-| English answer and citation |  |  |  |  |  |
-| Amharic answer and citation |  |  |  |  |  |
-| Off-topic response and handoff |  |  |  |  |  |
-| Helper reply through demonstrated channel |  |  |  |  |  |
-| Sound off |  |  |  |  |  |
-| Actual 200% browser zoom |  |  |  |  |  |
-| NVDA or TalkBack (if available) |  |  |  |  |  |
+| One-minute keyboard task | Unknown / not verified | Not recorded | Not recorded | Not provided | Not tested |
+| English answer and citation | Reported checked; independence unknown | Steps not recorded | Barriers/comments not recorded | Not provided | Retest not reported |
+| Amharic answer and citation | Reported checked; same lesson section; independence unknown | Steps not recorded | Barriers/comments not recorded | Not provided | Retest not reported |
+| Off-topic response and handoff | Reported checked; response appeared and form opened | Steps not recorded | Barriers/comments not recorded | Not provided | Retest not reported |
+| Ticket submission | Not tested | Not applicable | Not submitted | Not provided | Not tested |
+| Helper reply through demonstrated channel | Not tested | Not applicable | No ticket/reply checked | Not provided | Not tested |
+| Sound off | Unknown / not verified | Not recorded | Not recorded | Not provided | Not tested |
+| Actual 200% browser zoom | Unknown / not verified | Not recorded | Not recorded | Not provided | Not tested |
+| NVDA or TalkBack task (if used) | Unknown / not verified | Use and steps not recorded | Not recorded | Not provided | Not tested |
+| HTTP SMS simulator ticket/reply | Not tested | Not applicable | No ticket/reply tested | Not provided | Not tested |
+| Real phone SMS | Not tested | Not applicable | No carrier delivery tested | Not provided | Not tested |
 
 Do not fill in a result for a task that was not run. Keep accessibility criteria at Partly or Does not until observations support a change. Do not mark the gate complete or claim WCAG conformance based on this session alone.
 
@@ -60,27 +67,33 @@ The longer keyboard, screen-reader, zoom, sound-off, and device checklists below
 ## Manual run record (copy once per co-designer run)
 
 - Tester:
-- Co-designer name or consented identifier:
-- Test date and time (include timezone):
-- Device make/model:
-- Operating system and version/build:
-- Browser and version:
-- Screen reader and version (or “none”):
-- Viewport in CSS pixels:
-- Actual browser zoom percentage (do not substitute viewport emulation):
+- Co-designer name or consented identifier: [intentionally blank; no identifier provided]
+- Test date and time (include timezone): Unknown
+- Device make/model: Reported Samsung Galaxy A04s; Windows PC make/model unknown; current device make/model unknown
+- Operating system and version/build: Android version unknown; Windows 10; current device OS version unknown
+- Browser and version: Unknown
+- Screen reader and version (or “none”): TalkBack on the reported Android device and NVDA on the reported Windows PC were mentioned; versions and use during the task are unknown
+- Viewport in CSS pixels: Unknown
+- Actual browser zoom percentage (do not substitute viewport emulation): Unknown / not verified
 - Display/font scaling:
-- Test language(s):
-- Test page(s) and URL:
+- Test language(s): English and Amharic answers reported checked
+- Test page(s) and URL: https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html
 - Network state:
-- Main learner task completed unaided? **Not run**
-- Co-designer consent to record results: **Not recorded**
+- Main learner task completed unaided? **Unknown; sequence and independence were not recorded**
+- Original-session consent to take notes or record results: **Unknown**
+- Follow-up permission to record this summary in project documentation: **Yes**
+- Helper availability: **Unknown**
+- Reported help channel: **Widget handoff form opened; request not submitted and no reply checked**
+- Separate hosted simulator check: **HTTP `HELP` command only; no ticket or reply**
+- Reported task outcome: English/Amharic citations, off-topic response, and opening the handoff form were checked; ticket not submitted; no helper reply
+- Reported barriers, co-designer comments, and follow-up: **Not recorded**
 
 | Required condition | Actual setting | Main task result (Pass/Fail/Not run) | Barriers, evidence, and follow-up |
 |---|---|---|---|
-| Keyboard-only |  | Not run |  |
-| NVDA (Windows) or TalkBack (Android) |  | Not run |  |
-| Sound off / device muted |  | Not run |  |
-| Actual browser zoom at 200% |  | Not run |  |
+| Keyboard-only | Unknown | Unknown / not verified |  |
+| NVDA (Windows) or TalkBack (Android) | Use and version unknown | Unknown / not verified |  |
+| Sound off / device muted | Unknown | Unknown / not verified |  |
+| Actual browser zoom at 200% | Unknown | Unknown / not verified |  |
 
 ### Required main learner task
 
