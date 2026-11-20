@@ -261,6 +261,17 @@ test("lesson exploration uses current lesson text, localizes prompts, and does n
   await expect(assistant.locator("#launcher")).toBeEnabled();
   await assistant.locator("#launcher").click();
 
+  const explore = assistant.locator("#lesson-explore");
+  const exploreSummary = explore.locator("summary");
+  await expect.poll(() => explore.evaluate((element) => element.open)).toBe(false);
+  await exploreSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => explore.evaluate((element) => element.open)).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => explore.evaluate((element) => element.open)).toBe(false);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => explore.evaluate((element) => element.open)).toBe(true);
+
   const suggestions = assistant.locator("#lesson-explore-list button");
   await expect(suggestions).toHaveCount(3);
   await expect(assistant.locator("#lesson-explore-heading")).toHaveText(locales.am.strings.exploreHeading);
@@ -269,6 +280,7 @@ test("lesson exploration uses current lesson text, localizes prompts, and does n
   const amharicQuestion = await suggestions.first().getAttribute("data-question");
   await suggestions.first().click();
   await expect(assistant.locator("#question")).toHaveValue(amharicQuestion);
+  await expect(assistant.locator("#lesson-explore-status")).toHaveText(locales.am.strings.exploreInserted);
   expect(askRequests).toBe(0);
 
   await assistant.locator("#language-select").selectOption("ti");
@@ -291,18 +303,108 @@ test("lesson exploration uses current lesson text, localizes prompts, and does n
   await expect(blankAssistant.locator("#lesson-explore-list button")).toHaveCount(0);
 });
 
+test("lesson suggestions reflow on mobile and desktop without horizontal scrolling", async ({ page }) => {
+  for (const viewport of [{ width: 320, height: 800 }, { width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/savanna/pages/concept-with-navigation.html");
+    const assistant = page.locator("db-assistant");
+    await expect(assistant.locator("#launcher")).toBeEnabled();
+    await assistant.locator("#launcher").click();
+    await assistant.locator("#lesson-explore > summary").click();
+
+    const metrics = await assistant.evaluate((element) => {
+      const root = element.shadowRoot;
+      const details = root.querySelector("#lesson-explore");
+      const list = root.querySelector("#lesson-explore-list");
+      const firstSuggestion = list.querySelector("button");
+      const panel = root.querySelector("#panel");
+      const suggestionStyle = getComputedStyle(firstSuggestion);
+      return {
+        panelWidth: panel.clientWidth,
+        panelScrollWidth: panel.scrollWidth,
+        detailsWidth: details.clientWidth,
+        detailsScrollWidth: details.scrollWidth,
+        listWidth: list.clientWidth,
+        listScrollWidth: list.scrollWidth,
+        suggestionWidth: firstSuggestion.getBoundingClientRect().width,
+        suggestionHeight: firstSuggestion.getBoundingClientRect().height,
+        suggestionFontSize: parseFloat(suggestionStyle.fontSize),
+        suggestionLineHeight: parseFloat(suggestionStyle.lineHeight),
+        count: list.querySelectorAll("button").length
+      };
+    });
+
+    expect(metrics.count).toBe(3);
+    expect(metrics.panelScrollWidth).toBeLessThanOrEqual(metrics.panelWidth);
+    expect(metrics.detailsScrollWidth).toBeLessThanOrEqual(metrics.detailsWidth);
+    expect(metrics.listScrollWidth).toBeLessThanOrEqual(metrics.listWidth);
+    expect(metrics.suggestionWidth).toBeLessThanOrEqual(metrics.listWidth);
+    expect(metrics.suggestionHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.suggestionLineHeight).toBeGreaterThan(metrics.suggestionFontSize * 1.7);
+  }
+});
+
 test("lesson exploration shows a retryable error when lesson content is unavailable", async ({ page }) => {
   await page.route("**/demo/data/content.json", (route) => route.abort());
   await page.goto("/savanna/pages/concept-with-navigation.html");
   const assistant = page.locator("db-assistant");
   await expect(assistant.locator("#launcher")).toBeEnabled();
   await assistant.locator("#launcher").click();
+  await assistant.locator("#lesson-explore > summary").click();
   await expect(assistant.locator("#lesson-explore-status")).toHaveText(locales.am.strings.exploreError);
   const retry = assistant.locator("#lesson-explore-retry");
   await expect(retry).toBeVisible();
   await page.unroute("**/demo/data/content.json");
   await retry.click();
   await expect(assistant.locator("#lesson-explore-list button")).toHaveCount(3);
+});
+
+test("answer actions copy only the answer, report clipboard failures, and retain Listen", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text) => {
+          if (window.__failClipboard) throw new Error("Clipboard unavailable");
+          window.__copiedAnswer = text;
+        }
+      }
+    });
+  });
+  await page.route("**/api/v1/config", (route) => route.fulfill({ json: { externalAiConsentRequired: false } }));
+  await page.route("**/api/v1/ask", (route) => route.fulfill({
+    json: {
+      answer: sections[1].text.am,
+      sources: [{ url: sections[1].url, title: sections[1].titles.am }]
+    }
+  }));
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.locator("#launcher").click();
+  const learnerPrompt = "የሙከራ ጥያቄ ጽሑፍ";
+  await assistant.locator("#question").fill(learnerPrompt);
+  await assistant.locator("#send").click();
+
+  const answer = assistant.locator("#messages .message-assistant").last();
+  await expect(answer.locator("a.course-link")).toHaveAttribute("href", sections[1].url);
+  const copy = answer.getByRole("button", { name: locales.am.strings.copyAnswer });
+  await expect(copy).toBeVisible();
+  await expect(copy).toHaveAttribute("lang", "am");
+  await expect(answer.getByRole("button", { name: locales.am.strings.listen })).toBeVisible();
+  await copy.click();
+  await expect(answer.locator(".answer-copy-status")).toHaveText(locales.am.strings.answerCopied);
+  expect(await page.evaluate(() => window.__copiedAnswer)).toBe(sections[1].text.am);
+  expect(await page.evaluate(() => window.__copiedAnswer)).not.toBe(learnerPrompt);
+
+  await page.evaluate(() => { window.__failClipboard = true; });
+  await copy.click();
+  await expect(answer.locator(".answer-copy-status")).toHaveText(locales.am.strings.copyAnswerFailed);
+
+  await assistant.locator("#language-select").selectOption("ti");
+  await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe("ti");
+  const englishFallbackCopy = answer.getByRole("button", { name: locales.en.strings.copyAnswer });
+  await expect(englishFallbackCopy).toHaveAttribute("lang", "en");
 });
 
 test("accommodation request announces its queued ticket ID", async ({ page, request }) => {
