@@ -6,7 +6,7 @@
 - **Team members:** `[TEAM: fill in names and consented contact details]`
 - **Co-designer:** `[TEAM: add the co-designer's consented identifier; do not add private contact or disability information]`
 - **Main task:** `[TEAM: write the one-sentence task agreed with the co-designer, for example: “A learner asks a sourced course question and gets tutor help independently on their phone.”]`
-- **Accessibility gate:** Not completed. See [CONFORMANCE.md](./CONFORMANCE.md); it requires a real co-designer session and cannot be satisfied by automated tests alone.
+- **Co-designer report:** The project co-designer reports completing a check and that the flow worked. Session conditions and task-by-task results are not yet recorded in [CONFORMANCE.md](./CONFORMANCE.md); this report is not a WCAG 2.2 AA conformance claim.
 
 A multilingual learning assistant and tutor-escalation demo designed for accessibility-focused course support.
 
@@ -78,7 +78,7 @@ The root `render.yaml` defines a free Docker web service. Connect the GitHub rep
 
 The free service stores SQLite data at `/tmp/escalations.sqlite3`, which is ephemeral. Use test data only; tutor tickets may be lost when the instance restarts or is replaced. This Blueprint is for a demo, not live learner data or production use.
 
-The team-shared Render lesson URL observed on 2026-11-20 is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>; `/health/ready` returned `{"status":"ready"}` during the check. English and Amharic course questions returned lesson-linked answers. However, the deployed revision still answers “How do I bake bread?” with “I could not find this in the course” and does not offer the requested course-boundary/human-help response. The updated local code has the fix, but this hosted revision must be updated and rechecked before it is treated as pitch-ready. No hosted human-helper reply or carrier SMS delivery has been verified.
+The team-shared Render lesson URL observed on 2026-11-20 is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>; `/health/ready` returned `{"status":"ready"}` during that check. That deployed revision answered “How do I bake bread?” with “I could not find this in the course” and did not offer the requested course-boundary/human-help response. The project co-designer now reports a successful check, but the exact tested URL/revision and session details were not supplied, so the current hosted revision still needs a direct recheck. No carrier SMS delivery has been verified; the repository's SMS path is an HTTP simulator.
 
 ## Configuration
 
@@ -282,7 +282,7 @@ No inbound SMS provider adapter or public callback is included in this repositor
 
 ## Pitch-day rehearsal runbook
 
-Use demo/test data only. The team-shared lesson URL currently observed is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>. Recheck its readiness and flows after deploying the corrected revision; the hosted version checked on 2026-11-20 still lacked the required off-topic reply.
+Use demo/test data only. The team-shared lesson URL observed on 2026-11-20 is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>. The previous hosted check found a stale revision without the requested off-topic reply. The co-designer reports a successful check since then, but the tested deployment revision was not recorded; verify the current hosted revision before pitching.
 
 1. Check `https://YOUR-HOST/health/ready`, `/savanna/pages/concept-with-navigation.html`, `/demo/blank.html`, `/helper`, `/docs`, and `/openapi.json`. Confirm the helper can sign in using the service's server-side `HELPER_TOKEN`.
 2. On the Savanna lesson page, ask an English question about one lesson section (for example, the artificial-intelligence section). Confirm the answer has a source link and that it opens the cited heading.
@@ -387,10 +387,12 @@ These checks provide local integration evidence for the project, but they are no
 - `npm.cmd test` passed all 37 JavaScript tests.
 - `pytest -q` passed all 165 Python tests with one Starlette/httpx deprecation warning. The new `pytest.ini` adds the repository root to the import path so this console command works on Windows.
 - `npm.cmd run test:e2e -- --workers=1` passed all 47 Playwright tests. The Savanna test covers English and Amharic cited answers, off-topic accessible handoff, a widget tutor reply, and the separate HTTP SMS simulator/helper reply.
+- Rerun in this verification on 2026-11-20: `npm.cmd run test:e2e -- --workers=1` passed all 47 tests in 35.9 seconds.
+- `git ls-files` found zero tracked pytest temporary folders; local ignored caches remain in this checkout and are excluded from Git.
 - `npm.cmd run test:axe -- --workers=1` passed all five automated axe scenarios with no critical or serious violations.
 - `python scripts\export_openapi.py` added the missing `/api/v1/helper/course-gap-radar` route to `openapi.yaml`; `docker compose config --quiet` passed.
-- Hosted check: `https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html` loaded, `/health/ready` returned `{"status":"ready"}`, and English/Amharic course answers linked to the lesson section. The deployed page still returned “I could not find this in the course” for “How do I bake bread?” without the requested boundary response or person action. The local code is verified; the hosted deployment is not ready until updated and rechecked.
-- These checks do not establish real SMS delivery, a real helper reply, fluent-speaker approval, a co-designer session, real-device assistive-technology testing, actual 200% zoom, or WCAG conformance.
+- Hosted check on 2026-11-20: the page loaded and English/Amharic course answers linked to the lesson, but that deployed revision did not have the updated off-topic response. The co-designer reports a successful check since then; the URL/revision and session conditions were not provided, so the current hosted revision has not been independently rechecked here.
+- The co-designer reports the flow worked. Device/browser, screen-reader, sound, actual-zoom, consent, and task-by-task evidence are not yet recorded. These automated checks do not establish real SMS delivery, fluent-speaker approval, physical-device assistive-technology results, actual 200% zoom, or WCAG conformance.
 
 ## Accessibility and privacy notes
 

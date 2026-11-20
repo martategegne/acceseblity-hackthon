@@ -1,6 +1,6 @@
 # Accessibility gate: co-designer manual run
 
-**Human gate status (2026-11-15): NOT RUN.** No co-designer, keyboard-only, NVDA/TalkBack, sound-off, or real 200% zoom results are recorded. The automated evidence below is not a substitute and does not establish WCAG 2.2 AA conformance.
+**Co-designer report received (2026-11-20):** The project co-designer reports completing a check and that the flow worked. The session date, URL/revision, consent, device/browser, assistive technology, actual zoom, sound condition, and task-by-task observations were not supplied. Formal evidence for keyboard-only, NVDA/TalkBack, sound-off, and real 200% zoom remains incomplete; automated evidence below is not a substitute and does not establish WCAG 2.2 AA conformance.
 
 ## Pitch-day co-designer task card
 
