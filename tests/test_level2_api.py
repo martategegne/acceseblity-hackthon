@@ -8,7 +8,10 @@ import pytest
 
 from api import qa
 from api.qa import OFF_TOPIC_TRANSLATIONS, SENSITIVE_REFUSAL_TRANSLATIONS
-from api.main import app, DB_PATH, connect, initialize, save_escalation_record
+from api.main import (
+    app, DB_PATH, connect, initialize, record_course_gap_analytics,
+    save_escalation_record,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -43,6 +46,147 @@ def test_demo_site_assets_are_served_by_the_api(client):
 def test_health_endpoints_report_database_and_content_readiness(client):
     assert client.get("/health/live").json() == {"status": "ok"}
     assert client.get("/health/ready").json() == {"status": "ready"}
+
+
+def test_course_gap_radar_is_helper_protected_and_has_an_honest_empty_state(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "radar-helper-secret")
+    assert client.get("/api/v1/helper/course-gap-radar").status_code == 401
+
+    response = client.get(
+        "/api/v1/helper/course-gap-radar",
+        headers={"X-Helper-Token": "radar-helper-secret"},
+    )
+    assert response.status_code == 200
+    report = response.json()
+    assert report["hasActivity"] is False
+    assert report["topAnsweredTopics"] == []
+    assert report["notFoundCandidates"] == []
+    assert [row["language"] for row in report["byLanguage"]] == ["en", "am", "ti", "om", "so"]
+    assert all(row["total"]["count"] == 0 for row in report["byLanguage"])
+
+
+def test_course_gap_aggregates_group_counts_and_never_store_questions_or_identity(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "radar-helper-secret")
+    monkeypatch.setenv("AI_PROVIDER", "none")
+    monkeypatch.setenv("OFFLINE_MODE", "true")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    section = sections[0]
+    question = section["titles"]["en"]
+    first_answer = client.post("/api/v1/ask", json={"question": question, "language": "en"})
+    assert first_answer.status_code == 200
+    assert first_answer.json()["answerStatus"] == "answered"
+
+    # Add aggregate-only repeats with a unique canary so accidental prompt persistence is detectable.
+    canary = "PRIVATE_QUESTION_CANARY_84f7"
+    synthetic_answer = {
+        "answerStatus": "answered",
+        "sources": [{"url": section["url"], "type": "lesson"}],
+    }
+    for _ in range(2):
+        record_course_gap_analytics(canary, "en", sections, synthetic_answer)
+
+    with connect() as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(course_gap_aggregates)")}
+        rows = [dict(row) for row in db.execute("SELECT * FROM course_gap_aggregates")]
+    assert columns == {"day_bucket", "language", "topic_id", "outcome", "count"}
+    assert len(rows) == 1
+    assert rows[0]["topic_id"] == section["id"]
+    assert rows[0]["outcome"] == "answered"
+    assert rows[0]["count"] == 3
+    assert canary not in json.dumps(rows)
+    assert question not in json.dumps(rows)
+
+    report = client.get(
+        "/api/v1/helper/course-gap-radar",
+        headers={"X-Helper-Token": "radar-helper-secret"},
+    ).json()
+    assert report["hasActivity"] is True
+    assert report["topAnsweredTopics"] == [{"topicId": section["id"], "title": section["titles"]["en"], "count": 3}]
+    english = next(row for row in report["byLanguage"] if row["language"] == "en")
+    assert english["total"] == {"count": 3, "suppressed": False}
+    assert english["outcomes"]["answered"] == {"count": 3, "suppressed": False}
+
+
+def test_course_gap_radar_groups_supported_languages_and_suppresses_small_cells(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "radar-helper-secret")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    for language in ("en", "am", "ti", "om", "so"):
+        for index in range(3):
+            record_course_gap_analytics(
+                f"off-topic analytics check {language} {index}", language, sections,
+                {"answerStatus": "off_topic", "sources": []},
+            )
+    record_course_gap_analytics(
+        "Can I get legal advice?", "en", sections, {"answerStatus": "refused", "sources": []}
+    )
+    record_course_gap_analytics(
+        "A question in Arabic", "ar", sections, {"answerStatus": "answered", "sources": []}
+    )
+
+    response = client.get(
+        "/api/v1/helper/course-gap-radar",
+        headers={"X-Helper-Token": "radar-helper-secret"},
+    )
+    assert response.status_code == 200
+    report = response.json()
+    assert [row["language"] for row in report["byLanguage"]] == ["en", "am", "ti", "om", "so"]
+    for row in report["byLanguage"]:
+        expected_total = 4 if row["language"] == "en" else 3
+        assert row["total"] == {"count": expected_total, "suppressed": False}
+        assert row["outcomes"]["off_topic"] == {"count": 3, "suppressed": False}
+        assert row["outcomes"]["answered"] == {"count": 0, "suppressed": False}
+    english = next(row for row in report["byLanguage"] if row["language"] == "en")
+    assert english["outcomes"]["refused"] == {"count": None, "suppressed": True}
+    assert report["topAnsweredTopics"] == []
+    assert report["notFoundCandidates"] == []
+
+
+def test_not_found_nearest_lesson_is_labeled_as_candidate_not_citation(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "radar-helper-secret")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    section = sections[0]
+    for index in range(3):
+        record_course_gap_analytics(
+            f"{section['titles']['en']} unmet topic canary {index}", "en", sections,
+            {"answerStatus": "not_found", "sources": []},
+        )
+
+    report = client.get(
+        "/api/v1/helper/course-gap-radar",
+        headers={"X-Helper-Token": "radar-helper-secret"},
+    ).json()
+    assert report["notFoundCandidates"] == [{
+        "topicId": section["id"], "title": section["titles"]["en"], "count": 3, "candidateOnly": True,
+    }]
+    assert report["topAnsweredTopics"] == []
+
+
+def test_zero_gap_retention_disables_and_clears_aggregates(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "radar-helper-secret")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    record_course_gap_analytics(
+        "anonymous aggregate only", "en", sections,
+        {"answerStatus": "off_topic", "sources": []},
+    )
+    monkeypatch.setenv("COURSE_GAP_RETENTION_DAYS", "0")
+
+    response = client.get(
+        "/api/v1/helper/course-gap-radar",
+        headers={"X-Helper-Token": "radar-helper-secret"},
+    )
+    assert response.status_code == 200
+    assert response.json()["retentionDays"] == 0
+    assert response.json()["hasActivity"] is False
+    with connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM course_gap_aggregates").fetchone()[0] == 0
 
 
 def test_ask_reports_when_course_evidence_is_not_found(client, monkeypatch):
@@ -155,6 +299,14 @@ def test_content_endpoints(client, monkeypatch):
     # POST invalid content -> 400
     bad_res = client.post("/api/v1/content", json="not a list", headers=headers)
     assert bad_res.status_code == 400
+    invalid_titles = client.post("/api/v1/content", json=[{
+        "id": "invalid-localized-title",
+        "title": "Invalid title sample",
+        "titles": {"fr": "Unsupported language"},
+        "url": "/lesson#invalid-title",
+        "text": "Test lesson content.",
+    }], headers=headers)
+    assert invalid_titles.status_code == 400
 
     # POST valid content -> 200
     new_sections = [{
@@ -269,6 +421,29 @@ def test_ask_and_tutor_validation_errors_use_selected_language(client, language)
     })
     assert invalid_phone.status_code == 400
     assert invalid_phone.json()["detail"] == locale["api"]["error_ticket_phone"]
+
+
+def test_content_upload_preserves_localized_titles_for_cited_answers(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "content-helper")
+    monkeypatch.setenv("AI_PROVIDER", "none")
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    section = sections[1]
+    headers = {"X-Helper-Token": "content-helper"}
+
+    upload = client.post("/api/v1/content", json=sections, headers=headers)
+    assert upload.status_code == 200
+    stored = next(item for item in client.get("/api/v1/content").json() if item["id"] == section["id"])
+    assert stored["titles"] == section["titles"]
+
+    for language in ("en", "am", "ti", "om", "so"):
+        answer = client.post("/api/v1/ask", json={
+            "question": section["titles"][language],
+            "language": language,
+        })
+        assert answer.status_code == 200
+        assert answer.json()["sources"][0]["title"] == section["titles"][language]
 
 
 def test_ask_returns_a_job_listing_as_a_cited_source(client, monkeypatch):

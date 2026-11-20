@@ -307,6 +307,79 @@ test("helper can send an interim update and later close the same ticket", async 
   }
 });
 
+test("course answers stay localized and linked across every supported learner language", async ({ page, request }) => {
+  const section = sections[1];
+  const pageErrors = [];
+  const contentResponse = await request.post("/api/v1/content", {
+    headers: { "X-Helper-Token": "e2e-helper-token" },
+    data: sections
+  });
+  expect(contentResponse.status()).toBe(200);
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.locator("#launcher").click();
+
+  for (const language of trackLanguages) {
+    await assistant.locator("#language-select").selectOption(language);
+    await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe(language);
+    await assistant.locator("#question").fill(section.titles[language]);
+    await assistant.locator("#send").click();
+
+    const answer = assistant.locator("#messages .message-assistant").last();
+    await expect(answer).toHaveAttribute("lang", language);
+    await expect(answer).toHaveAttribute("data-answer-status", "answered");
+    await expect(answer).toContainText(section.text[language].slice(0, 40));
+    await expect(answer.locator("a.course-link")).toContainText(section.titles[language]);
+    await expect(answer.locator("a.course-link")).toHaveAttribute("href", section.url);
+  }
+
+  expect(pageErrors).toEqual([]);
+});
+
+test("sensitive questions remain refused without a course citation", async ({ page }) => {
+  await page.goto("/demo/blank.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#question").fill("Can you give me legal advice?");
+  await assistant.locator("#send").click();
+
+  const answer = assistant.locator("#messages .message-assistant").last();
+  await expect(answer).toHaveAttribute("data-answer-status", "refused");
+  await expect(answer).toContainText(locales.en.api.sensitive_refusal);
+  await expect(answer.locator("a.course-link, .person-action")).toHaveCount(0);
+});
+
+test("question form exposes its busy state while a sourced answer is loading", async ({ page }) => {
+  await page.route("**/api/v1/config", (route) => route.fulfill({ json: { externalAiConsentRequired: false } }));
+  await page.route("**/api/v1/ask", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({
+      json: {
+        answer: sections[1].text.en,
+        answerStatus: "answered",
+        sources: [{ title: sections[1].titles.en, url: sections[1].url }]
+      }
+    });
+  });
+  await page.goto("/demo/blank.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#question").fill(sections[1].titles.en);
+  await assistant.locator("#send").click();
+
+  await expect(assistant.locator("#form")).toHaveAttribute("aria-busy", "true");
+  await expect(assistant.locator("#send")).toBeDisabled();
+  await expect(assistant.locator("#messages .message-assistant").last()).toContainText(sections[1].text.en.slice(0, 40));
+  await expect(assistant.locator("#form")).not.toHaveAttribute("aria-busy", "true");
+  await expect(assistant.locator("#send")).toBeEnabled();
+});
+
 test("off-topic answers offer a localized accessible tutor handoff in each Track 3 language", async ({ page }) => {
   for (const language of trackLanguages) {
     const strings = locales[language].strings;

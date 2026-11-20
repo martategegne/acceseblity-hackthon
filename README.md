@@ -148,6 +148,8 @@ curl -X POST "$API/api/v1/content" \
   --data-binary @content.json
 ```
 
+For localized citation labels, include an optional `titles` object with supported language codes and non-empty titles; uploaded localized titles are retained and used for source links.
+
 Do not expose the helper token in learner-facing HTML or JavaScript. An unauthenticated or invalid-token write returns 401; indexing is disabled with 503 when `HELPER_TOKEN` is not configured.
 
 The blank-host proof is [demo/blank.html](./demo/blank.html). It contains only one external script tag and no Savanna or Bootstrap CSS. The component loads its search helper and locale resources relative to that script. It uses a shadow root for its UI styling and emits events instead of changing host page styles.
@@ -170,12 +172,13 @@ Common flows include:
 - `GET /api/v1/helper/escalations/{ticket_id}/brief` for an authorized helper handoff brief
 - `POST /api/v1/escalations/{ticket_id}/reply` for tutor replies
 - `GET /api/v1/helper/metrics` for privacy-safe queue age, reply-time, and feedback totals
+- `GET /api/v1/helper/course-gap-radar` for helper-authenticated anonymous course-question aggregates
 - `GET /api/v1/helper/content-health` to check indexed sources, required languages, and placeholder text
-- `/helper` for the password-protected helper inbox; the helper token is entered into the page and used in `X-Helper-Token`
+- `/helper` for the helper inbox and Course Gap Radar; the helper token is entered into the page and used in `X-Helper-Token` for private data requests
 - `POST /sms/inbound` and `POST /api/v1/sms/inbound` for the JSON HTTP SMS simulator (not real SMS delivery)
 - `POST /api/v1/jobs/notify` for helper-only job notifications; outbound SMS delivery is optional and requires Twilio setup
 
-`POST /api/v1/ask` returns `answerStatus` as `answered`, `not_found`, `off_topic`, or `refused`. Only evidenced course answers include source links. Scope detection is deterministic lexical overlap with the indexed lesson/job content: a low-relevance question with some overlap is `not_found`; no overlap is `off_topic` when indexed content is available. If there is no index, the answer stays `not_found` because scope cannot be assessed. This is not semantic intent detection. Off-topic answers use the exact English response “I can only help with this course. Would you like a person to help?” and an Amharic response; other language packs currently fall back to English for this message. The Amharic wording has not had fluent-speaker review. An off-topic or not-found response includes an accessible **Talk to a person** button.
+`POST /api/v1/ask` returns `answerStatus` as `answered`, `not_found`, `off_topic`, or `refused`. Only evidenced course answers include source links. Scope detection is deterministic lexical overlap with the indexed lesson/job content: a low-relevance question with some overlap is `not_found`; no overlap is `off_topic` when indexed content is available. If there is no index, the answer stays `not_found` because scope cannot be assessed. This is not semantic intent detection. Off-topic and not-found responses include an accessible **Talk to a person** action in the five Track 3 languages; Tigrinya, Afaan Oromo, and Somali copy still needs fluent-speaker review. An off-topic or not-found response includes an accessible **Talk to a person** button.
 
 Track 3 backend additions:
 
@@ -291,6 +294,7 @@ Use demo/test data only. First deploy the Render Blueprint and record the actual
 - **Request tracing:** responses carry `X-Request-ID`; JSON logs record route, method, status, elapsed time, and request ID without question text, ticket contents, or phone numbers.
 - **Abuse protection:** configurable request limits apply to learner Q&A, tutor requests, and inbound SMS. The limiter is process-local; use one API worker or put a shared limiter in front of multiple workers.
 - **Tutor operations:** helper-only metrics show queue age, stale waiting requests, average reply time, and unreviewed answer feedback without returning conversation or contact data.
+- **Teacher Course Gap Radar:** `/helper` includes a token-gated report for anonymous question outcomes by language, common grounded lesson topics, and nearest lesson candidates for not-found queries. Its API route requires `X-Helper-Token`; unauthenticated requests receive no analytics. The dashboard labels not-found candidates as unverified and they are never returned as answers or citations. It displays only groups with at least three questions; smaller counts are suppressed. The page copy is English-only (the existing helper console is English-only), while language names use native names and topic titles are English.
 - **Course quality checks:** helper-only content health reports broken/missing source references, placeholder text, and gaps in supported-language titles or lesson text.
 
 The default rate limits are 120 Q&A requests, 20 tutor requests, and 30 inbound SMS requests per client per 60 seconds. A rejected request returns HTTP 429 and `Retry-After`. Set a limit to `0` to disable it. `TUTOR_STALE_MINUTES` controls when a waiting ticket appears as stale in the helper metrics.
@@ -300,6 +304,7 @@ Tutor endpoints use `X-Helper-Token`. For example:
 ```bash
 curl -H "X-Helper-Token: $HELPER_TOKEN" http://localhost:8081/api/v1/helper/metrics
 curl -H "X-Helper-Token: $HELPER_TOKEN" http://localhost:8081/api/v1/helper/content-health
+curl -H "X-Helper-Token: $HELPER_TOKEN" http://localhost:8081/api/v1/helper/course-gap-radar
 ```
 
 The answer response includes a `grounding` object. Successful answers include the exact source quote and a confidence band based on retrieval similarity; this score is not a calibrated probability. Refused or unmatched questions return `status: unverified` and no evidence.
@@ -410,6 +415,7 @@ The component currently has locale packs for English, Amharic, Tigrinya, Afaan O
 - Typed questions use the local course/job index when offline and the existing browser queue stores pending questions locally.
 - Voice task recordings are queued in browser local storage only while offline and removed after a sync response. The server handles audio in memory/pipe-based local processing and does not persist raw command audio. Ordinary tutor voice notes remain an explicit attachment in the existing tutor flow.
 - Tutor conversation content is stored in SQLite when a tutor ticket is created with sharing consent. Learner ticket access tokens are held in browser local storage so the learner can check, export, or delete their ticket. `TICKET_RETENTION_DAYS` controls automatic server-side expiry.
+- The Course Gap Radar stores only daily counters keyed by Track 3 language, answer outcome, and lesson topic ID (or a no-match/non-lesson marker). It never stores question text, names, phone numbers, sender hashes, learner IDs, or ticket IDs for analytics. Normal learner API questions and free-text questions sent to the HTTP SMS simulator contribute outcomes; SMS commands, tickets, and Arabic questions do not. For a not-found answer, the nearest lesson ID may be counted separately as an explicitly unverified candidate when retrieval has a nonzero score; this does not change the answer threshold or citation. Reports cover the last 30 days, suppress cells and topic counts below three, and retain aggregate rows for 90 days by default. `COURSE_GAP_RETENTION_DAYS` changes retention; `0` disables collection and clears stored aggregates at startup or when the report endpoint is called. Because the counters are not linked to people, they cannot be deleted per learner; they expire by retention instead. The teacher/helper report API is protected by the existing helper token. The static helper page shell may load publicly, but it reveals no report data without a valid token.
 - `GET /api/v1/escalations/{ticket_id}/data` exports a learner's ticket with `X-Learner-Token`; `DELETE` on the same `/data` path deletes it. The widget also has local clear-data controls.
 - The default `OFFLINE_MODE=true` prevents cloud AI, webhook, SMS, and Telegram egress from the API. Screen sharing is user-started and uses the browser's native permission prompt. The Android alternative sends page details and an optional learner-selected screenshot.
 - The server cannot operate while a device has no connection. Browser recording and local queue storage happen on the device. `Speak a task` uploads to the configured server only after recording ends and a connection is available.

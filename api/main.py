@@ -220,6 +220,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 ETHIOPIC_RANGE = re.compile(r"[\u1200-\u137F]")
 SUPPORTED_LANGUAGES = {"en", "am", "om", "ti", "so", "ar"}
+TRACK_GAP_LANGUAGES = ("en", "am", "ti", "om", "so")
+GAP_OUTCOMES = ("answered", "not_found", "off_topic", "refused")
+GAP_NO_TOPIC = "__no_match__"
+GAP_NON_LESSON = "__non_lesson__"
+GAP_REPORT_MINIMUM = 3
 
 SECTION_SHORT_CODES = {
     "what-is-shaping-the-future-of-va-work": "Course s1",
@@ -568,6 +573,24 @@ def initialize() -> None:
             source_url TEXT NOT NULL, created_at TEXT NOT NULL,
             reviewed INTEGER NOT NULL DEFAULT 0
         )""")
+        db.execute("""CREATE TABLE IF NOT EXISTS course_gap_aggregates (
+            day_bucket TEXT NOT NULL,
+            language TEXT NOT NULL,
+            topic_id TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0 CHECK(count >= 0),
+            PRIMARY KEY(day_bucket, language, topic_id, outcome)
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_course_gap_day ON course_gap_aggregates(day_bucket)")
+        try:
+            gap_retention_days = max(0, int(os.getenv("COURSE_GAP_RETENTION_DAYS", "90")))
+        except ValueError:
+            gap_retention_days = 90
+        if gap_retention_days == 0:
+            db.execute("DELETE FROM course_gap_aggregates")
+        else:
+            gap_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=gap_retention_days)).isoformat()
+            db.execute("DELETE FROM course_gap_aggregates WHERE day_bucket < ?", (gap_cutoff,))
         db.execute("CREATE INDEX IF NOT EXISTS idx_escalations_status_created ON escalations(status, created_at)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_escalations_replied_at ON escalations(replied_at)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_answer_feedback_reviewed_created ON answer_feedback(reviewed, created_at)")
@@ -1063,6 +1086,19 @@ async def index_content(
         if isinstance(text, dict) and any(not isinstance(value, str) for value in text.values()):
             plain_bad("Translated course text must be words in each language field.")
         normalized = {"id": section_id.strip(), "title": title.strip(), "url": url, "text": text}
+        titles = section.get("titles")
+        if titles is not None:
+            if not isinstance(titles, dict) or not titles or any(
+                language not in SUPPORTED_LANGUAGES
+                or not isinstance(localized_title, str)
+                or not localized_title.strip()
+                for language, localized_title in titles.items()
+            ):
+                plain_bad("Localized course titles must use supported language codes and non-empty text.")
+            normalized["titles"] = {
+                language: localized_title.strip()
+                for language, localized_title in titles.items()
+            }
         source_type = section.get("type", "lesson")
         if source_type not in ("lesson", "job"):
             plain_bad("Section type must be lesson or job.")
@@ -1410,13 +1446,170 @@ async def ask(payload: dict[str, Any]) -> dict[str, Any]:
         plain_bad("Write a question of 1 to 4000 characters.", error_language, "error_question")
     if not isinstance(language, str) or language not in SUPPORTED_LANGUAGES:
         plain_bad("Language must be en, am, om, ti, so, or ar.", "en", "error_language")
-    return await answer_question(
+    sections = indexed_sections()
+    result = await answer_question(
         question.strip(),
         language,
-        indexed_sections(),
+        sections,
         allow_cloud=payload.get("externalAiConsent") is True,
         offline_only=offline_mode(),
     )
+    record_course_gap_analytics(question.strip(), language, sections, result)
+    return result
+
+
+def record_course_gap_analytics(
+    question: str, language: str, sections: list[dict[str, Any]], result: dict[str, Any]
+) -> None:
+    """Increment anonymous daily counters; never persist the learner's prompt or identity."""
+    if language not in TRACK_GAP_LANGUAGES:
+        return
+    outcome = result.get("answerStatus")
+    if outcome not in GAP_OUTCOMES:
+        return
+
+    topic_id = GAP_NO_TOPIC
+    if outcome == "answered":
+        sources = result.get("sources")
+        source_url = sources[0].get("url") if isinstance(sources, list) and sources and isinstance(sources[0], dict) else None
+        source_type = sources[0].get("type", "lesson") if isinstance(sources, list) and sources and isinstance(sources[0], dict) else None
+        if source_type == "job":
+            topic_id = GAP_NON_LESSON
+        elif isinstance(source_url, str):
+            matched = next((section for section in sections if section.get("type", "lesson") == "lesson" and section.get("url") == source_url), None)
+            if matched and isinstance(matched.get("id"), str):
+                topic_id = matched["id"]
+    elif outcome == "not_found":
+        # This is only an unverified nearest lesson candidate for gap analysis.
+        # It does not alter retrieval, answer thresholds, or citations.
+        ranked = retrieve(question, sections, language)
+        if ranked:
+            score, candidate = ranked[0]
+            if score > 0 and candidate.get("type", "lesson") == "lesson" and isinstance(candidate.get("id"), str):
+                topic_id = candidate["id"]
+
+    retention_days = 90
+    try:
+        retention_days = max(0, int(os.getenv("COURSE_GAP_RETENTION_DAYS", "90")))
+    except ValueError:
+        pass
+    if retention_days == 0:
+        try:
+            with connect() as db:
+                db.execute("DELETE FROM course_gap_aggregates")
+        except sqlite3.Error:
+            logger.warning("Course gap aggregate cleanup failed")
+        return
+
+    today = datetime.now(timezone.utc).date()
+    day_bucket = today.isoformat()
+    cutoff = (today - timedelta(days=retention_days)).isoformat()
+    try:
+        with connect() as db:
+            db.execute("DELETE FROM course_gap_aggregates WHERE day_bucket < ?", (cutoff,))
+            db.execute(
+                "INSERT INTO course_gap_aggregates(day_bucket,language,topic_id,outcome,count) "
+                "VALUES(?,?,?,?,1) ON CONFLICT(day_bucket,language,topic_id,outcome) "
+                "DO UPDATE SET count=count+1",
+                (day_bucket, language, topic_id, outcome),
+            )
+    except sqlite3.Error:
+        # Analytics are best-effort and must never interrupt a learner answer.
+        logger.warning("Course gap aggregate update failed")
+
+
+def _report_count(value: int) -> dict[str, Any]:
+    return {"count": value if value == 0 or value >= GAP_REPORT_MINIMUM else None,
+            "suppressed": 0 < value < GAP_REPORT_MINIMUM}
+
+
+@app.get("/api/v1/helper/course-gap-radar")
+def helper_course_gap_radar(x_helper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    """Return helper-only aggregates; small language/topic groups are suppressed."""
+    helper_auth(x_helper_token)
+    today = datetime.now(timezone.utc).date()
+    cutoff = (today - timedelta(days=29)).isoformat()
+    retention_days = 90
+    try:
+        retention_days = max(0, int(os.getenv("COURSE_GAP_RETENTION_DAYS", "90")))
+    except ValueError:
+        pass
+    if retention_days == 0:
+        with connect() as db:
+            db.execute("DELETE FROM course_gap_aggregates")
+        return {
+            "period": "last_30_days", "retentionDays": 0, "minimumVisibleCount": GAP_REPORT_MINIMUM,
+            "hasActivity": False, "byLanguage": [], "topAnsweredTopics": [], "notFoundCandidates": [],
+            "message": "Course gap analytics are disabled by COURSE_GAP_RETENTION_DAYS=0.",
+        }
+
+    with connect() as db:
+        db.execute(
+            "DELETE FROM course_gap_aggregates WHERE day_bucket < ?",
+            ((today - timedelta(days=retention_days)).isoformat(),),
+        )
+        rows = db.execute(
+            "SELECT language,topic_id,outcome,SUM(count) AS count FROM course_gap_aggregates "
+            "WHERE day_bucket >= ? GROUP BY language,topic_id,outcome",
+            (cutoff,),
+        ).fetchall()
+        content_rows = db.execute("SELECT section_json FROM content_sections ORDER BY id").fetchall()
+
+    section_titles: dict[str, str] = {}
+    for row in content_rows:
+        try:
+            section = json.loads(row["section_json"])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(section, dict) and section.get("type", "lesson") == "lesson" and isinstance(section.get("id"), str):
+            titles = section.get("titles") if isinstance(section.get("titles"), dict) else {}
+            section_titles[section["id"]] = str(titles.get("en") or section.get("title") or section["id"])
+
+    by_language: dict[str, dict[str, int]] = {language: {status: 0 for status in GAP_OUTCOMES} for language in TRACK_GAP_LANGUAGES}
+    answered_topics: dict[str, int] = defaultdict(int)
+    not_found_candidates: dict[str, int] = defaultdict(int)
+    for row in rows:
+        language, topic_id, outcome, count = row["language"], row["topic_id"], row["outcome"], int(row["count"])
+        if language not in by_language or outcome not in GAP_OUTCOMES:
+            continue
+        by_language[language][outcome] += count
+        if outcome == "answered" and topic_id not in {GAP_NO_TOPIC, GAP_NON_LESSON}:
+            answered_topics[topic_id] += count
+        if outcome == "not_found" and topic_id not in {GAP_NO_TOPIC, GAP_NON_LESSON}:
+            not_found_candidates[topic_id] += count
+
+    outcome_totals = []
+    language_names = {"en": "English", "am": "አማርኛ", "ti": "ትግርኛ", "om": "Afaan Oromoo", "so": "Soomaali"}
+    for language in TRACK_GAP_LANGUAGES:
+        values = by_language[language]
+        total = sum(values.values())
+        outcome_totals.append({
+            "language": language,
+            "languageName": language_names[language],
+            "total": _report_count(total),
+            "outcomes": {status: _report_count(values[status]) for status in GAP_OUTCOMES},
+        })
+
+    def topic_rows(counts: dict[str, int], *, candidate_only: bool = False) -> list[dict[str, Any]]:
+        return [
+            {"topicId": topic_id, "title": section_titles.get(topic_id, topic_id), "count": count,
+             **({"candidateOnly": True} if candidate_only else {})}
+            for topic_id, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if count >= GAP_REPORT_MINIMUM
+        ][:10]
+
+    return {
+        "period": "last_30_days",
+        "retentionDays": retention_days,
+        "minimumVisibleCount": GAP_REPORT_MINIMUM,
+        "hasActivity": bool(rows),
+        "byLanguage": outcome_totals,
+        "topAnsweredTopics": topic_rows(answered_topics),
+        "notFoundCandidates": topic_rows(not_found_candidates, candidate_only=True),
+        "unmatchedNotFoundCount": _report_count(sum(
+            int(row["count"]) for row in rows if row["outcome"] == "not_found" and row["topic_id"] == GAP_NO_TOPIC
+        )),
+    }
 
 
 @app.post("/api/v1/answer-feedback", status_code=201)
@@ -1668,6 +1861,7 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     # Normal question: run answer pipeline
     sections = indexed_sections()
     result = await answer_question(text, lang, sections, allow_cloud=False, offline_only=offline_mode())
+    record_course_gap_analytics(text, lang, sections, result)
     answer = result.get("answer", "")
     sources = result.get("sources", [])
 
