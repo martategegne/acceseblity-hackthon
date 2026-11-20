@@ -5,54 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tutor escalation inbox</title>
   <style>
-    :root { color-scheme: light; font: 1rem/1.6 system-ui, sans-serif; color: #18251d; background: #f3f7f4; }
-    body { max-width: 68rem; margin: 0 auto; padding: clamp(1rem, 3vw, 2.5rem) 1rem; }
+    :root { color-scheme: light; font: 1rem/1.6 system-ui, sans-serif; color: #183025; background: #f5f7f2; }
+    body { max-width: 76rem; margin: 0 auto; padding: clamp(1rem, 3vw, 2.5rem) 1rem; background: radial-gradient(ellipse at 8% 0, #e8f1e6 0, transparent 26rem); }
+    main { display: grid; gap: 1rem; }
     h1, h2, p { margin-block: 0 .75rem; }
-    h1 { color: #174b2d; font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.2; letter-spacing: -.03em; }
-    main > p { max-width: 58rem; color: #52635a; }
+    h1 { position: relative; isolation: isolate; overflow: hidden; margin-block-end: .25rem; padding: clamp(1.5rem, 4vw, 2.5rem); border-radius: 1.4rem 1.4rem .5rem 1.4rem; color: #fff; background: linear-gradient(112deg, #173f2b, #2d704a 72%, #3a8055); box-shadow: 0 18px 42px rgba(24, 54, 36, .18); font-size: clamp(1.8rem, 4vw, 2.7rem); line-height: 1.15; letter-spacing: -.035em; }
+    h1::after { position: absolute; z-index: -1; inset-inline-end: -3.5rem; inset-block-start: -7rem; width: 17rem; aspect-ratio: 1; border: 1px solid rgba(255, 255, 255, .3); border-radius: 50%; box-shadow: 0 0 0 2rem rgba(255, 255, 255, .07), 0 0 0 4rem rgba(255, 255, 255, .045); content: ""; }
+    main > p { max-width: 66ch; margin-block-end: .5rem; color: #465a4d; font-size: 1.05rem; }
     label { display: block; margin-block: .75rem .25rem; font-weight: 700; }
     input, textarea, button { box-sizing: border-box; font: inherit; }
-    input, textarea { width: 100%; padding: .7rem .8rem; border: 1px solid #87988c; border-radius: .65rem; background: #fff; color: #18251d; }
-    button { min-height: 44px; padding: .6rem 1rem; color: #fff; background: #166534; border: 2px solid #166534; border-radius: .65rem; font-weight: 650; cursor: pointer; transition: background-color .16s ease, transform .16s ease; }
-    button:hover:not(:disabled) { background: #14532d; transform: translateY(-1px); }
+    input, textarea { width: 100%; padding: .75rem .9rem; border: 1px solid #829587; border-radius: .8rem; background: #fffefb; color: #183025; }
+    input:focus-visible, textarea:focus-visible { border-color: #245c3b; box-shadow: 0 0 0 3px rgba(36, 92, 59, .16); }
+    button { min-height: 46px; padding: .65rem 1.1rem; color: #fff; background: #205d3b; border: 1px solid #205d3b; border-radius: 999px; font-weight: 700; cursor: pointer; transition: background-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+    button:hover:not(:disabled) { background: #174b2e; box-shadow: 0 6px 16px rgba(24, 54, 36, .16); transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(0); }
     button:disabled { cursor: wait; opacity: .65; }
-    :focus-visible { outline: 3px solid #92400e; outline-offset: 3px; }
+    :focus-visible { outline: 3px solid #7c351a; outline-offset: 3px; }
     .toolbar, .actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
-    .toolbar { margin-block: 1.5rem; padding: 1.25rem; border: 1px solid #d8e4da; border-radius: 1rem; background: #fff; box-shadow: 0 8px 24px rgba(23, 41, 30, .05); }
+    .toolbar { margin-block: .5rem 1rem; padding: clamp(1rem, 2.5vw, 1.5rem); border: 1px solid #d5e0d5; border-radius: 1.2rem; background: rgba(255, 254, 251, .92); box-shadow: 0 12px 30px rgba(23, 41, 30, .07); }
     .keep-open { display: flex; align-items: center; gap: .5rem; }
     .keep-open input { width: 24px; height: 24px; flex: none; padding: 0; }
     .toolbar label { flex: 1 1 20rem; }
-    #status { min-height: 1.5em; color: #31583d; font-weight: 600; }
+    #status { min-height: 1.5em; margin-block: 0 .5rem; padding-inline-start: .2rem; color: #31583d; font-weight: 700; }
     #tickets { display: grid; gap: 1.25rem; padding: 0; list-style: none; }
-    .ticket { padding: clamp(1rem, 3vw, 1.5rem); border: 1px solid #d8e4da; border-radius: 1rem; background: #fff; box-shadow: 0 10px 28px rgba(23, 41, 30, .06); overflow-wrap: anywhere; }
-    .ticket h2 { color: #1e5032; font-size: 1.25rem; line-height: 1.35; }
-    .ticket h3 { margin-block: 1.25rem .5rem; color: #31583d; font-size: 1rem; }
+    .ticket { padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #d5e0d5; border-inline-start: 4px solid #a75935; border-radius: 1.1rem; background: #fffefb; box-shadow: 0 12px 30px rgba(23, 41, 30, .075); overflow-wrap: anywhere; }
+    .ticket h2 { color: #1e5032; font-size: 1.3rem; line-height: 1.3; }
+    .ticket h3 { margin-block: 1.4rem .55rem; color: #28583c; font-size: 1.02rem; }
     .ticket p { color: #405247; }
     .conversation { padding-inline-start: 1.25rem; }
     .conversation li { margin-block: .5rem; white-space: pre-wrap; }
-    .screen-context, .screen-demo { margin-block: 1rem; padding: 1rem; border: 1px solid #cbdccf; border-radius: .85rem; background: #f7faf7; }
+    .screen-context, .screen-demo { margin-block: 1rem; padding: clamp(.9rem, 2vw, 1.2rem); border: 1px solid #d2dfd2; border-radius: 1rem; background: #f1f6ef; }
     .screen-context pre { max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
     .screen-context img, .screen-demo video { display: block; max-width: 100%; margin-block: .75rem; border-radius: .65rem; }
     .screen-demo video { width: 100%; max-height: 60vh; background: #17251d; }
     audio { display: block; width: min(100%, 32rem); margin-block: .75rem; }
     textarea { min-height: 7rem; resize: vertical; }
-    .radar { margin-block: 2rem; padding-block: 1.25rem; border-block: 2px solid #174b2d; }
+    .radar { margin-block: 1rem; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #d5e0d5; border-inline-start: 4px solid #205d3b; border-radius: 1.2rem; background: #fffefb; box-shadow: 0 10px 26px rgba(23, 41, 30, .045); }
     .radar-intro { max-width: 66ch; color: #405247; }
     .radar-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1rem; }
-    .radar-toolbar button { color: #fff; background: #174b2d; border: 2px solid #174b2d; }
+    .radar-toolbar button { color: #fff; background: #205d3b; border: 1px solid #205d3b; }
     .radar-toolbar button:disabled { cursor: wait; }
     .radar-status { min-height: 1.5em; font-weight: 650; }
     .radar-results[hidden] { display: none; }
     .radar-results { display: grid; gap: 1.5rem; }
     .radar-results h3 { margin-block: 0 .5rem; color: #174b2d; font-size: 1.15rem; }
-    .radar-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #cbd8cd; background: #fff; }
+    .radar-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #cbd8cd; border-radius: .85rem; background: #fff; }
     .radar-table { width: 100%; border-collapse: collapse; text-align: start; }
     .radar-table caption { padding: .75rem; text-align: start; font-weight: 650; color: #405247; }
     .radar-table th, .radar-table td { padding: .65rem .75rem; border-block-start: 1px solid #d8e4da; text-align: start; vertical-align: top; }
-    .radar-table thead th { background: #edf3e9; color: #18251d; }
+    .radar-table thead th { background: #edf3e9; color: #183025; }
     .radar-table td:not(:first-child), .radar-table th:not(:first-child) { text-align: end; font-variant-numeric: tabular-nums; }
     .radar-note { padding-inline-start: .85rem; border-inline-start: 3px solid #9c4f24; color: #405247; }
-    .radar-empty { padding: 1rem; border: 1px dashed #829481; background: #f8faf7; }
+    .radar-empty { padding: 1rem; border: 1px dashed #829481; border-radius: .8rem; background: #f8faf7; }
+    main > section:not(.radar) { padding-block: 1.25rem; border-block-start: 1px solid #d5e0d5; }
+    #feedback-list { display: grid; gap: .75rem; padding-inline-start: 1.25rem; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
     @media (max-width: 640px) { .radar { margin-block: 1.5rem; } .radar-table { min-width: 42rem; } }
     @media (max-width: 640px) {
       .toolbar { padding: 1rem; }
