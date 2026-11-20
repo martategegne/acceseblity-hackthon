@@ -44,6 +44,7 @@
 
 - Answers questions from course and job content.
 - Links answers to the relevant source section.
+- Suggests up to three questions from the current lesson; selecting one fills the question field without sending it.
 - Supports multilingual content and voice-friendly interaction.
 - Queues questions for retry when connectivity is unreliable.
 - Lets learners request a tutor and gives helpers a protected inbox.
@@ -166,8 +167,8 @@ The generated browser bundle is [module/db-assistant.min.js](./module/db-assista
 
 - `npm.cmd test`: 37 passed.
 - `pytest -q`: 165 passed, with one Starlette/httpx deprecation warning.
-- `npm.cmd run build:module` and `npm.cmd run check:module-size`: passed; the generated bundle is 22,994 bytes gzipped.
-- `npm.cmd run test:e2e -- --workers=1`: 47 passed, including sourced English and Amharic answers, off-topic handoff, a widget tutor reply, and the separate HTTP SMS simulator flow.
+- `npm.cmd run build:module` and `npm.cmd run check:module-size`: passed; the generated bundle is 24,840 bytes gzipped.
+- `npm.cmd run test:e2e -- --workers=1`: 49 passed, including lesson-based suggestions, sourced English and Amharic answers, off-topic handoff, a widget tutor reply, and the separate HTTP SMS simulator flow.
 - `npm.cmd run test:axe -- --workers=1`: 5 passed.
 - `docker compose config --quiet`: passed. `git ls-files` found no tracked pytest caches or temporary outputs; ignored local caches were left untouched.
 - The hosted SMS simulator returned instructions for a synthetic `HELP` request. No SMS-created ticket, human reply, or carrier SMS was tested.
