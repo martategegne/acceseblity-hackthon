@@ -43,7 +43,7 @@ test("assistant stays within narrow viewports and page controls remain keyboard 
     const panelBox = await assistant.locator("#panel").boundingBox();
     const controlBox = await page.locator("#page-control").boundingBox();
     expect(panelBox.width).toBe(viewport.width);
-    expect(panelBox.height).toBeLessThanOrEqual(Math.ceil(viewport.height * 0.7));
+    expect(panelBox.height).toBeLessThanOrEqual(Math.ceil(viewport.height * 0.74));
     expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(viewport.height);
     expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(panelBox.y);
 
@@ -57,6 +57,60 @@ test("assistant stays within narrow viewports and page controls remain keyboard 
     await page.keyboard.press("Enter");
     await expect(page.locator("#page-control")).toHaveAttribute("data-activated", "true");
   }
+});
+
+test("keyboard-only lesson flow reaches language, answer citation, and tutor request", async ({ page }) => {
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  const launcher = assistant.locator("#launcher");
+  await expect(launcher).toBeEnabled();
+
+  let launcherFocused = false;
+  for (let tab = 0; tab < 80; tab++) {
+    await page.keyboard.press("Tab");
+    launcherFocused = await assistant.evaluate((element) => element.shadowRoot.activeElement?.id === "launcher");
+    if (launcherFocused) break;
+  }
+  expect(launcherFocused).toBeTruthy();
+  await page.keyboard.press("Enter");
+  await expect(assistant.locator("#panel-title")).toBeFocused();
+
+  const languageSelect = assistant.locator("#language-select");
+  let languageFocused = false;
+  for (let tab = 0; tab < 6; tab++) {
+    await page.keyboard.press("Tab");
+    languageFocused = await assistant.evaluate((element) => element.shadowRoot.activeElement?.id === "language-select");
+    if (languageFocused) break;
+  }
+  expect(languageFocused).toBeTruthy();
+  await expect(languageSelect).toBeFocused();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Tab");
+  await expect(assistant.locator("#question")).toBeFocused();
+  await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe("am");
+
+  await page.keyboard.type(amharicQuestion);
+  await page.keyboard.press("Enter");
+  const answer = assistant.locator("#messages .message-assistant").last();
+  await expect(answer).toContainText(amharicQuestion.slice(0, 32));
+  const citation = answer.locator("a.course-link");
+  await expect(citation).toHaveAttribute("href", /concept-with-navigation\.html#/);
+
+  for (let tab = 0; tab < 4; tab++) await page.keyboard.press("Shift+Tab");
+  await expect(citation).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#artificial-intelligence-and-the-future-of-va-work/);
+
+  await page.keyboard.press("Escape");
+  await expect(launcher).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(assistant.locator("#panel-title")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(assistant.locator("#person")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(assistant.locator("#escalation-reason")).toBeFocused();
 });
 
 test("launcher stays in document flow at compact zoom-like viewport widths", async ({ page }) => {
@@ -75,6 +129,32 @@ test("launcher stays in document flow at compact zoom-like viewport widths", asy
   const controlBox = await page.locator("#page-control").boundingBox();
   const launcherBox = await assistant.locator("#launcher").boundingBox();
   expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(launcherBox.y);
+});
+
+test("assistant reflows without horizontal overflow across mobile, tablet, and desktop widths", async ({ page }) => {
+  for (const viewport of [
+    { width: 320, height: 720 },
+    { width: 390, height: 844 },
+    { width: 768, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/demo/blank.html");
+    const assistant = page.locator("db-assistant");
+    await expect(assistant.locator("#launcher")).toBeEnabled();
+    await assistant.locator("#launcher").click();
+
+    const panelBox = await assistant.locator("#panel").boundingBox();
+    const pageMetrics = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth
+    }));
+    expect(panelBox.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(viewport.height);
+    expect(pageMetrics.scrollWidth).toBeLessThanOrEqual(pageMetrics.width);
+  }
 });
 
 test("blank-host Bootstrap variables theme the isolated widget", async ({ page }) => {
