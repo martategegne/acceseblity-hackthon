@@ -1,18 +1,52 @@
-# db-assistant
+# DIGITAL BRIDGE ACCESSIBILITY HACKATHON 2026
 
-## Hackathon submission details
+## Absari | Track 3: Multilingual assistant and live help
 
-- **Track:** 3 — Multilingual assistant and live help
-- **Team members:** `[TEAM: fill in names and consented contact details]`
-- **Co-designer:** `[TEAM: add the co-designer's consented identifier; do not add private contact or disability information]`
-- **Main task:** `[TEAM: write the one-sentence task agreed with the co-designer, for example: “A learner asks a sourced course question and gets tutor help independently on their phone.”]`
-- **Accessibility gate:** Not completed. See [CONFORMANCE.md](./CONFORMANCE.md); it requires a real co-designer session and cannot be satisfied by automated tests alone.
+<p align="center">
+  <strong>Answer &gt; evidence &gt; human help</strong>
+</p>
 
-A multilingual learning assistant and tutor-escalation demo designed for accessibility-focused course support.
+<p align="center">
+  <strong>Accessible multilingual learning support with evidence-based answers and a human handoff.</strong>
+</p>
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=javascript,python,fastapi,docker,nginx,playwright&perline=6" alt="JavaScript, Python, FastAPI, Docker, NGINX, and Playwright logos" />
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#api">API</a> ·
+  <a href="#accessibility-and-privacy-notes">Accessibility</a>
+</p>
+
+`db-assistant` is an accessibility-focused multilingual learning assistant for the Absari Accessibility Hackathon. It helps learners find answers from course content, verify the source, retry questions when connectivity is unreliable, and request human support when self-service is not enough.
+
+## Submission profile
+
+| | Details |
+| --- | --- |
+| **Hackathon** | Absari Accessibility Hackathon 2026 |
+| **Track** | Track 3 — Multilingual assistant and live help |
+| **Primary stack** | JavaScript web component, Python/FastAPI API, Docker, and NGINX |
+| **Supported locales** | English, Amharic, Tigrinya, Afaan Oromo, Somali, and Arabic |
+| **Validation status** | Automated checks are recorded; co-designer and fluent-speaker validation remain open |
+
+### Team information
+
+- **Marta Tegegne** — Lead, Savanna Integration & Demo
+- **Zenebu Melaku** — Backend, AI & API Integration
+- **Betelehem Meheret** — Product Design & Frontend Lead
+- **Huda Hussen** — Accessibility & Co-Design Lead
+- **Co-designer review:** Pending a recorded co-designer session; participant identifiers are intentionally omitted from this public README.
+- **Main task:** The final agreed co-design task statement will be added after review.
+
+Human validation remains an explicit accessibility gate. Automated browser and accessibility checks support the implementation, but they do not replace a recorded co-designer session or establish WCAG conformance. See [CONFORMANCE.md](./CONFORMANCE.md) for the current evidence status.
 
 ## Overview
 
-`db-assistant` combines a lightweight web component, a FastAPI backend, and demo content to help learners ask questions about course material, check sources, and escalate to a tutor when needed. It is built to support multiple languages, optional AI-backed answers, queued offline questions, and learner-initiated help flows without forcing a heavy framework.
+The project combines a lightweight embeddable web component, a FastAPI backend, and static demo content. It supports multilingual retrieval, source-linked answers, optional AI providers, queued offline questions, voice-friendly flows, and learner-initiated tutor escalation without requiring a heavy frontend framework.
 
 The project includes:
 
