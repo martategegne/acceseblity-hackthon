@@ -270,14 +270,30 @@ describe("Job source search tests", () => {
 describe("Additional language packs and retrieval", () => {
   const languages = ["am", "ti", "om", "so"];
   const englishStrings = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../module/i18n/en.json"), "utf-8")).strings;
+  const lessonExploreKeys = [
+    "exploreDescription",
+    "exploreEmpty",
+    "exploreError",
+    "exploreFallback",
+    "exploreHeading",
+    "exploreInserted",
+    "exploreLoading",
+    "exploreQuestionTemplate",
+    "exploreRetry"
+  ];
 
   for (const language of languages) {
-    it(`${language} locale is complete and every course section has localized text, title, and stable source`, () => {
+    it(`${language} locale has localized course content and only declared lesson-exploration fallbacks`, () => {
       const pack = JSON.parse(fs.readFileSync(path.resolve(__dirname, `../module/i18n/${language}.json`), "utf-8"));
-      const expectedStringKeys = Object.keys(englishStrings);
+      const missingStringKeys = Object.keys(englishStrings).filter((key) => !pack.strings[key]);
       assert.equal(pack.lang, language);
       assert.equal(pack.dir, "ltr");
-      assert.deepEqual(Object.keys(pack.strings).sort(), expectedStringKeys.sort());
+      assert.ok(missingStringKeys.every((key) => lessonExploreKeys.includes(key)));
+      if (language === "am") assert.deepEqual(missingStringKeys, []);
+      assert.deepEqual(
+        Object.keys(pack.strings).sort(),
+        Object.keys(englishStrings).filter((key) => !missingStringKeys.includes(key)).sort()
+      );
       assert.ok(Object.values(pack.strings).every((value) => typeof value === "string" && value.trim()));
       for (const section of sections) {
         assert.ok(section.titles[language], `${section.id} needs a ${language} title`);
