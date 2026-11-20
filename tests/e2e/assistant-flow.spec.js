@@ -250,6 +250,61 @@ test("course source links from the blank demo open the cited course section", as
   await expect(page.locator(`#${section.id}`)).toBeVisible();
 });
 
+test("lesson exploration uses current lesson text, localizes prompts, and does not auto-submit", async ({ page }) => {
+  let askRequests = 0;
+  await page.route("**/api/v1/ask", (route) => {
+    askRequests += 1;
+    return route.continue();
+  });
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.locator("#launcher").click();
+
+  const suggestions = assistant.locator("#lesson-explore-list button");
+  await expect(suggestions).toHaveCount(3);
+  await expect(assistant.locator("#lesson-explore-heading")).toHaveText(locales.am.strings.exploreHeading);
+  await expect(suggestions.first()).toHaveAttribute("lang", "am");
+  await expect(suggestions.first()).toContainText(sections[0].titles.am);
+  const amharicQuestion = await suggestions.first().getAttribute("data-question");
+  await suggestions.first().click();
+  await expect(assistant.locator("#question")).toHaveValue(amharicQuestion);
+  expect(askRequests).toBe(0);
+
+  await assistant.locator("#language-select").selectOption("ti");
+  await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe("ti");
+  await expect(assistant.locator("#lesson-explore-fallback")).toBeVisible();
+  await expect(assistant.locator("#lesson-explore-fallback")).toContainText("English");
+  await expect(suggestions.first()).toHaveAttribute("lang", "en");
+  await expect(suggestions.first()).toContainText(sections[0].titles.en);
+  const fallbackQuestion = await suggestions.first().getAttribute("data-question");
+  await suggestions.first().click();
+  await expect(assistant.locator("#question")).toHaveValue(fallbackQuestion);
+  expect(askRequests).toBe(0);
+
+  await page.goto("/demo/blank.html");
+  const blankAssistant = page.locator("db-assistant");
+  await expect(blankAssistant.locator("#launcher")).toBeEnabled();
+  await blankAssistant.evaluate((element) => element.setAttribute("lang", "en"));
+  await blankAssistant.locator("#launcher").click();
+  await expect(blankAssistant.locator("#lesson-explore-status")).toHaveText(locales.en.strings.exploreEmpty);
+  await expect(blankAssistant.locator("#lesson-explore-list button")).toHaveCount(0);
+});
+
+test("lesson exploration shows a retryable error when lesson content is unavailable", async ({ page }) => {
+  await page.route("**/demo/data/content.json", (route) => route.abort());
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.locator("#launcher").click();
+  await expect(assistant.locator("#lesson-explore-status")).toHaveText(locales.am.strings.exploreError);
+  const retry = assistant.locator("#lesson-explore-retry");
+  await expect(retry).toBeVisible();
+  await page.unroute("**/demo/data/content.json");
+  await retry.click();
+  await expect(assistant.locator("#lesson-explore-list button")).toHaveCount(3);
+});
+
 test("accommodation request announces its queued ticket ID", async ({ page, request }) => {
   await page.goto("/demo/blank.html");
   const assistant = page.locator("db-assistant");
