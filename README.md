@@ -44,7 +44,8 @@
 
 - Answers questions from course and job content.
 - Links answers to the relevant source section.
-- Suggests up to three questions from the current lesson; selecting one fills the question field without sending it.
+- Offers a collapsed-by-default lesson-exploration section with up to three localized questions from the current lesson; selecting one fills but does not send the prompt.
+- Lets learners explicitly copy an assistant answer or use its existing Listen control; audio does not start automatically.
 - Supports multilingual content and voice-friendly interaction.
 - Queues questions for retry when connectivity is unreliable.
 - Lets learners request a tutor and gives helpers a protected inbox.
