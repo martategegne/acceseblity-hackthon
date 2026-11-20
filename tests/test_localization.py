@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 from api.main import SUPPORTED_LANGUAGES, _HANDOFF_REASONS, indexed_sections
+from api.qa import OFF_TOPIC_TRANSLATIONS
 from api.voice import LANGUAGES
 
 
@@ -25,7 +26,7 @@ def test_selector_api_voice_and_locale_files_share_one_language_set():
 
 def test_offered_locales_are_complete_or_explicitly_marked_incomplete():
     english = json.loads((LOCALE_DIR / "en.json").read_text(encoding="utf-8"))
-    required_keys = set(english["strings"]) - {"translationIncomplete"}
+    required_keys = set(english["strings"]) - {"translationIncomplete", "offTopic"}
     request_reason_keys = {
         "escalationReasonLabel",
         "escalationReasonChoose",
@@ -43,6 +44,8 @@ def test_offered_locales_are_complete_or_explicitly_marked_incomplete():
     for language in SUPPORTED_LANGUAGES:
         locale = json.loads((LOCALE_DIR / f"{language}.json").read_text(encoding="utf-8"))
         assert request_reason_keys <= set(locale["strings"])
+        if language in {"en", "am"}:
+            assert locale["strings"]["offTopic"]
         if language == "ar":
             assert locale["incomplete"] is True
             assert locale["strings"]["translationIncomplete"]
@@ -73,3 +76,12 @@ def test_arabic_sensitive_topics_are_covered_by_the_refusal_guard():
     topics = json.loads((LOCALE_DIR / "topics.json").read_text(encoding="utf-8"))
 
     assert topics["ar"]
+
+
+def test_off_topic_copy_matches_api_and_widget_for_reviewed_locale_fields():
+    english = json.loads((LOCALE_DIR / "en.json").read_text(encoding="utf-8"))
+    amharic = json.loads((LOCALE_DIR / "am.json").read_text(encoding="utf-8"))
+
+    assert english["strings"]["offTopic"] == OFF_TOPIC_TRANSLATIONS["en"]
+    assert amharic["strings"]["offTopic"] == amharic["api"]["off_topic"]
+    assert amharic["api"]["off_topic"] == OFF_TOPIC_TRANSLATIONS["am"]

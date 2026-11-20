@@ -274,9 +274,12 @@ describe("Additional language packs and retrieval", () => {
   for (const language of languages) {
     it(`${language} locale is complete and every course section has localized text, title, and stable source`, () => {
       const pack = JSON.parse(fs.readFileSync(path.resolve(__dirname, `../module/i18n/${language}.json`), "utf-8"));
+      const expectedStringKeys = Object.keys(englishStrings).filter((key) =>
+        language === "am" || key !== "offTopic"
+      );
       assert.equal(pack.lang, language);
       assert.equal(pack.dir, "ltr");
-      assert.deepEqual(Object.keys(pack.strings).sort(), Object.keys(englishStrings).sort());
+      assert.deepEqual(Object.keys(pack.strings).sort(), expectedStringKeys.sort());
       assert.ok(Object.values(pack.strings).every((value) => typeof value === "string" && value.trim()));
       for (const section of sections) {
         assert.ok(section.titles[language], `${section.id} needs a ${language} title`);

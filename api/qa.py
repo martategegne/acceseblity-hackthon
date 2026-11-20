@@ -8,6 +8,7 @@ import os
 from .retrieval import retrieve, sensitive_topic
 
 NOT_FOUND = "I could not find this in the course."
+OFF_TOPIC = "I can only help with this course. Would you like a person to help?"
 SENSITIVE_REFUSAL = "I can’t help with medical, legal, or immigration advice. Please talk to a tutor."
 NOT_FOUND_TRANSLATIONS = {
     "en": NOT_FOUND,
@@ -16,6 +17,10 @@ NOT_FOUND_TRANSLATIONS = {
     "om": "Barnoota kana keessatti kana hin arganne.",
     "so": "Casharkan kama helin.",
     "ar": "لم أجد هذا في الدرس.",
+}
+OFF_TOPIC_TRANSLATIONS = {
+    "en": OFF_TOPIC,
+    "am": "ስለዚህ ትምህርት ብቻ መርዳት እችላለሁ። አንድ ሰው እንዲረዳዎት ይፈልጋሉ?",
 }
 SENSITIVE_REFUSAL_TRANSLATIONS = {
     "en": SENSITIVE_REFUSAL,
@@ -83,6 +88,16 @@ async def answer_question(
             "score": best_score,
             "answerStatus": "refused",
             "grounding": _grounding(best_score, "", [], "refused", "search"),
+        }
+
+    if ranked and best_score == 0:
+        return {
+            "answer": OFF_TOPIC_TRANSLATIONS.get(language, OFF_TOPIC),
+            "sources": [],
+            "mode": "search",
+            "score": best_score,
+            "answerStatus": "off_topic",
+            "grounding": _grounding(best_score, "", [], "off_topic", "search"),
         }
 
     try:

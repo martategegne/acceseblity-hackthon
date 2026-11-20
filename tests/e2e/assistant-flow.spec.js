@@ -301,3 +301,86 @@ test("helper can send an interim update and later close the same ticket", async 
     await request.delete(ticketUrl, { headers: helperHeaders });
   }
 });
+
+test("off-topic answers offer an accessible action that opens tutor help", async ({ page }) => {
+  await page.goto("/demo/blank.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+  await expect.poll(() => assistant.evaluate((element) => element._sections.length)).toBeGreaterThan(0);
+  await page.context().setOffline(true);
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#question").fill("Where can I buy train tickets for Madrid?");
+  await assistant.locator("#send").click();
+
+  const answer = assistant.locator("#messages .message-assistant")
+    .filter({ hasText: "I can only help with this course. Would you like a person to help?" }).last();
+  await expect(answer).toContainText("I can only help with this course. Would you like a person to help?");
+  await expect(answer.locator("a.course-link")).toHaveCount(0);
+  const helpButton = answer.getByRole("button", { name: "Talk to a person" });
+  await expect(helpButton).toBeVisible();
+  await helpButton.click();
+  await expect(assistant.locator("#escalation-reason")).toBeFocused();
+});
+
+test("Savanna lesson answers link in English and Amharic and the SMS simulator returns a helper reply", async ({ page, request }) => {
+  const section = sections[1];
+  const sender = "+251911123456";
+  const helperHeaders = { "X-Helper-Token": "e2e-helper-token" };
+  let smsTicketId;
+
+  try {
+    await page.goto("/savanna/pages/concept-with-navigation.html");
+    const assistant = page.locator("db-assistant");
+    await expect(assistant.locator("#launcher")).toBeEnabled();
+    await assistant.locator("#launcher").click();
+
+    await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+    await assistant.locator("#question").fill(section.titles.en);
+    await assistant.locator("#send").click();
+    const englishAnswer = assistant.locator("#messages .message-assistant").last();
+    await expect(englishAnswer).toContainText(section.text.en.slice(0, 40));
+    await expect(englishAnswer.locator("a.course-link")).toHaveAttribute("href", section.url);
+
+    await assistant.evaluate((element) => element.setAttribute("lang", "am"));
+    await assistant.locator("#question").fill(section.titles.am);
+    await assistant.locator("#send").click();
+    const amharicAnswer = assistant.locator("#messages .message-assistant").last();
+    await expect(amharicAnswer).toContainText(section.text.am.slice(0, 32));
+    await expect(amharicAnswer.locator("a.course-link")).toHaveAttribute("href", section.url);
+
+    const inboxBefore = await request.get("/api/v1/escalations", { headers: helperHeaders });
+    expect(inboxBefore.status()).toBe(200);
+    const existingIds = new Set((await inboxBefore.json()).map((ticket) => ticket.ticketId));
+    const smsRequest = await request.post("/sms/inbound", { data: { from: sender, text: "PERSON" } });
+    expect(smsRequest.status()).toBe(200);
+    const reference = (await smsRequest.text()).match(/STATUS ([A-F0-9]{8})/)?.[1];
+    expect(reference).toBeTruthy();
+
+    const inboxAfter = await request.get("/api/v1/escalations", { headers: helperHeaders });
+    expect(inboxAfter.status()).toBe(200);
+    const ticket = (await inboxAfter.json()).find((entry) => !existingIds.has(entry.ticketId));
+    expect(ticket).toBeTruthy();
+    smsTicketId = ticket.ticketId;
+
+    await page.goto("/helper");
+    await page.locator("#token").fill("e2e-helper-token");
+    await page.getByRole("button", { name: "Load waiting requests" }).click();
+    const helperTicket = page.locator(".ticket").filter({ hasText: smsTicketId });
+    await expect(helperTicket).toBeVisible();
+    await helperTicket.locator("textarea").fill("Please review the lesson source.");
+    await helperTicket.getByRole("button", { name: "Send reply" }).click();
+    await expect(helperTicket).toHaveCount(0);
+
+    const status = await request.post("/sms/inbound", {
+      data: { from: sender, text: `STATUS ${reference}` }
+    });
+    expect(status.status()).toBe(200);
+    await expect(status).toBeOK();
+    expect(await status.text()).toContain("Please review the lesson source.");
+  } finally {
+    if (smsTicketId) {
+      await request.delete(`/api/v1/escalations/${smsTicketId}`, { headers: helperHeaders });
+    }
+  }
+});

@@ -1,7 +1,14 @@
 import asyncio
 import pytest
 
-from api.qa import NOT_FOUND_TRANSLATIONS, SENSITIVE_REFUSAL, SENSITIVE_REFUSAL_TRANSLATIONS, answer_question
+from api.qa import (
+    NOT_FOUND_TRANSLATIONS,
+    OFF_TOPIC,
+    OFF_TOPIC_TRANSLATIONS,
+    SENSITIVE_REFUSAL,
+    SENSITIVE_REFUSAL_TRANSLATIONS,
+    answer_question,
+)
 
 
 SECTIONS = [
@@ -42,12 +49,27 @@ class FakeProvider:
 def test_below_threshold_does_not_call_provider(monkeypatch):
     monkeypatch.setenv("THRESHOLD", "0.5")
     provider = FakeProvider({"text": "unexpected answer"})
-    result = asyncio.run(answer_question("Where can I find the moon?", "en", SECTIONS, provider))
+    result = asyncio.run(answer_question("What salary range do virtual assistants earn?", "en", SECTIONS, provider))
     assert provider.calls == 0
     assert result["mode"] == "search"
     assert result["answer"] == "I could not find this in the course."
     assert result["sources"] == []
     assert result["answerStatus"] == "not_found"
+
+
+@pytest.mark.parametrize(("question", "language"), [
+    ("Where can I buy train tickets for Madrid?", "en"),
+    ("የአዲስ አበባ የአየር ሁኔታ ዛሬ ምን ይመስላል?", "am"),
+])
+def test_off_topic_questions_offer_a_person_without_fabricated_sources(question, language):
+    provider = FakeProvider({"text": "unsupported answer"})
+    result = asyncio.run(answer_question(question, language, SECTIONS, provider))
+
+    assert provider.calls == 0
+    assert result["answer"] == OFF_TOPIC_TRANSLATIONS.get(language, OFF_TOPIC)
+    assert result["answerStatus"] == "off_topic"
+    assert result["sources"] == []
+    assert result["grounding"]["evidence"] == []
 
 
 def test_provider_failure_falls_back_to_best_section(monkeypatch):
@@ -124,9 +146,10 @@ def test_retrieval_only_returns_single_best_section_link(monkeypatch):
 
 def test_no_match_and_sensitive_answers_have_no_unrelated_sources(monkeypatch):
     monkeypatch.setenv("THRESHOLD", "0.5")
-    unrelated = asyncio.run(answer_question("Where can I find the moon?", "en", SECTIONS))
+    unrelated = asyncio.run(answer_question("What salary range do virtual assistants earn?", "en", SECTIONS))
     sensitive = asyncio.run(answer_question("Can you give me legal advice?", "en", SECTIONS))
     assert unrelated["sources"] == []
+    assert unrelated["answerStatus"] == "not_found"
     assert sensitive["sources"] == []
 
 

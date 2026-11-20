@@ -56,7 +56,7 @@ Static demo pages (demo/, savanna/)
 cp .env.example .env
 ```
 
-2. Update `.env` with a secure helper token and any optional service settings you need.
+2. Replace the `HELPER_TOKEN` placeholder in `.env` with a unique, randomly generated secret. Keep `.env` local; never place the token in learner-facing HTML or JavaScript.
 
 3. Start the stack:
 
@@ -76,7 +76,7 @@ With Docker Compose, `/helper` and `/docs` are served by the API on port `8081`,
 
 The root `render.yaml` defines a free Docker web service. Connect the GitHub repository to Render as a Blueprint and deploy the `main` branch. The container binds to Render's `PORT` value (and defaults to `8000` for local runs); `/health/ready` is the readiness check. Render generates `HELPER_TOKEN` for the service. Keep integrations offline for the demo; do not add SMS, Telegram, cloud AI, or webhook credentials to the repository.
 
-The free service stores SQLite data at `/tmp/escalations.sqlite3`, which is ephemeral. Use test data only; tutor tickets may be lost when the instance restarts or is replaced. This Blueprint is for a demo, not live learner data or production use.
+The free service stores SQLite data at `/tmp/escalations.sqlite3`, which is ephemeral. Use test data only; tutor tickets may be lost when the instance restarts or is replaced. This Blueprint is for a demo, not live learner data or production use. This checkout does not record a deployed hosted URL or prove that a hosted service is running; the team must deploy it and run the rehearsal checks below.
 
 ## Configuration
 
@@ -93,7 +93,7 @@ The app reads settings from `.env`. The following values are the main ones you w
 | `OLLAMA_URL` / `OLLAMA_MODEL` | Local Ollama configuration |
 | `CLOUD_URL` / `CLOUD_API_KEY` / `CLOUD_MODEL` | Optional cloud AI configuration |
 | `TELEGRAM_BOT_TOKEN` | Enables Telegram bot features |
-| `SMS_ENCRYPTION_KEY` / Twilio variables | Optional SMS alert setup |
+| `SMS_ENCRYPTION_KEY` / Twilio variables | Optional outbound job-alert SMS only; the inbound tutor-SMS route is an HTTP simulator, not a configured gateway |
 
 ## Project structure
 
@@ -171,7 +171,11 @@ Common flows include:
 - `POST /api/v1/escalations/{ticket_id}/reply` for tutor replies
 - `GET /api/v1/helper/metrics` for privacy-safe queue age, reply-time, and feedback totals
 - `GET /api/v1/helper/content-health` to check indexed sources, required languages, and placeholder text
-- helper-only job notification and SMS endpoints when configured
+- `/helper` for the password-protected helper inbox; the helper token is entered into the page and used in `X-Helper-Token`
+- `POST /sms/inbound` and `POST /api/v1/sms/inbound` for the JSON HTTP SMS simulator (not real SMS delivery)
+- `POST /api/v1/jobs/notify` for helper-only job notifications; outbound SMS delivery is optional and requires Twilio setup
+
+`POST /api/v1/ask` returns `answerStatus` as `answered`, `not_found`, `off_topic`, or `refused`. Only evidenced course answers include source links. Scope detection is deterministic lexical overlap with the indexed lesson/job content: a low-relevance question with some overlap is `not_found`; no overlap is `off_topic` when indexed content is available. If there is no index, the answer stays `not_found` because scope cannot be assessed. This is not semantic intent detection. Off-topic answers use the exact English response “I can only help with this course. Would you like a person to help?” and an Amharic response; other language packs currently fall back to English for this message. The Amharic wording has not had fluent-speaker review. An off-topic or not-found response includes an accessible **Talk to a person** button.
 
 Track 3 backend additions:
 
@@ -249,7 +253,33 @@ curl -X POST "$API/api/v1/escalations/$TICKET_ID/reply" -H "X-Helper-Token: $HEL
 curl -X DELETE "$API/api/v1/escalations/$TICKET_ID" -H "X-Helper-Token: $HELPER_TOKEN"
 ```
 
-For an SMS gateway, configure it to POST JSON `{ "from": "0912345678", "text": "JOBS" }` to `/sms/inbound` (or `/api/v1/sms/inbound`) and return the plain-text body to the sender. The handler formats replies within the SMS limit. There is no SMS gateway bundled; use the curl request above for a local simulation. Job alerts and SMS delivery require external integrations and are skipped in offline mode.
+#### SMS helper flow: simulation and real-provider boundary
+
+`POST /sms/inbound` (also `/api/v1/sms/inbound`) accepts a JSON object with `from` and `text`, then returns a `text/plain` response. This is an HTTP simulation of an SMS provider callback; it does **not** send or receive a real SMS. The `PERSON` command creates a ticket and returns a short `STATUS` reference. A helper can send an interim update (ticket remains waiting), send a final reply (ticket becomes answered), or delete that ticket in `/helper`; the same sender then checks it with `STATUS <reference>`. The SMS-created ticket is a separate request from a ticket opened in the browser widget.
+
+Example local simulation (replace the status reference with the one returned by the first request):
+
+```bash
+API=http://localhost:8081
+curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
+  -d '{"from":"0912345678","text":"PERSON"}'
+curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
+  -d '{"from":"0912345678","text":"STATUS ABCD1234"}'
+```
+
+No inbound SMS provider adapter or public callback is included in this repository; whether an account or credentials are provisioned in the hosting environment must be confirmed by the team. A real two-way SMS deployment still needs a provider account and number, a public HTTPS callback, provider request-signature verification, and an adapter for the provider's request/response format (for example, Twilio form-encoded input and TwiML responses are not accepted by this JSON endpoint). The existing Twilio variables enable only outbound, consent-based job alerts; they do not activate two-way tutor SMS. Outbound alerts also require `OFFLINE_MODE=false`, Twilio credentials, `SMS_ENCRYPTION_KEY`, and a configured sender. Keep all credentials on the server.
+
+## Pitch-day rehearsal runbook
+
+Use demo/test data only. First deploy the Render Blueprint and record the actual team-owned URL; no hosted URL or live deployment has been verified from this checkout.
+
+1. Check `https://YOUR-HOST/health/ready`, `/savanna/pages/concept-with-navigation.html`, `/demo/blank.html`, `/helper`, `/docs`, and `/openapi.json`. Confirm the helper can sign in using the service's server-side `HELPER_TOKEN`.
+2. On the Savanna lesson page, ask an English question about one lesson section (for example, the artificial-intelligence section). Confirm the answer has a source link and that it opens the cited heading.
+3. Switch the widget to Amharic and ask the equivalent question. Confirm the answer is in the available Amharic course text and its link opens the same cited section. Translation quality still needs fluent-speaker review.
+4. Use the widget's **Talk to a person** action once, choose a reason, and submit. Confirm the learner sees a queued ticket/status and can later use **Check for tutor reply**. A human helper must be available to reply; automated checks do not establish staffing or response time.
+5. Separately demonstrate the SMS simulator: POST `PERSON` to `/sms/inbound`, open `/helper` with the helper token and reply to that SMS-created ticket, then POST `STATUS <reference>` from the same test sender. This verifies HTTP behavior only; it is not SMS delivery and is not the browser ticket's reply channel.
+6. Spend one minute keyboard-only: Tab to and open the launcher, ask a question, follow a source link, return, activate **Talk to a person**, and check visible focus and announcements. This quick check is not the co-designer accessibility gate.
+7. Record a short backup walkthrough with synthetic data and no secrets or learner details. Keep it in the team's approved storage, not this repository.
 
 - **Verifiable answers:** `/api/v1/ask` returns a `grounding` object with its evidence quote, source URL, retrieval score, and verification method. Refused or unmatched answers have no evidence. Confidence bands are based on retrieval similarity, not calibrated probabilities.
 - **Request tracing:** responses carry `X-Request-ID`; JSON logs record route, method, status, elapsed time, and request ID without question text, ticket contents, or phone numbers.
@@ -337,7 +367,15 @@ These checks provide local integration evidence for the project, but they are no
 - `docker compose config --quiet` passed. The isolated `track3-qa` web and API containers were running during the HTTP smoke checks. This verifies the current Compose runtime routes, not a clean-machine startup or production deployment.
 - The latest `scripts/measure-slow3g.ps1` run targeted `http://localhost:18040/demo/blank.html` on 2026-11-16. Lighthouse simulated 400 ms RTT, 400 Kbps throughput, and 4x CPU slowdown; observed load was **76 ms**, First Contentful Paint was **153 ms**, and performance score was **0.81**. This is a local simulated result, not a deployed-network measurement.
 - The browser test checked that JobPosting JSON-LD matches rendered listing data. The graph omits guide example fields `datePosted` and `employmentType` and uses an unstructured place name instead of a postal address, so full Schema.org completeness is not claimed.
-- The browser test checked that JobPosting JSON-LD matches rendered listing data. The graph omits guide example fields `datePosted` and `employmentType` and uses an unstructured place name instead of a postal address, so full Schema.org completeness is not claimed.
+
+### Verification record — 2026-11-20
+
+- `npm.cmd run build:module` and `npm.cmd run check:module-size` passed; the generated widget is 21.34 KB gzipped (21,852 bytes).
+- `npm.cmd test` passed all 37 JavaScript tests.
+- `python -m pytest` passed all 117 Python tests with one Starlette/httpx deprecation warning.
+- `npx.cmd playwright test` passed all 41 Playwright tests, including five automated axe scenarios and the Savanna English/Amharic plus HTTP SMS-simulation path.
+- `python scripts\export_openapi.py` completed and produced no OpenAPI diff.
+- These are local automated results only. They do not establish a hosted deployment, real SMS delivery, a human helper response, fluent-speaker approval, a co-designer session, real-device assistive-technology testing, or WCAG conformance.
 
 ## Accessibility and privacy notes
 
@@ -372,7 +410,7 @@ The component currently has locale packs for English, Amharic, Tigrinya, Afaan O
 
 ## Performance, costs, and libraries
 
-- **Bundle size:** Built with `npm.cmd run build:module`; measured by `npm.cmd run check:module-size` as **21.22 KB gzipped (21,729 bytes)** on 2026-11-16. This is the generated `module/db-assistant.min.js` bundle.
+- **Bundle size:** Built with `npm.cmd run build:module`; measured by `npm.cmd run check:module-size` as **21.34 KB gzipped (21,852 bytes)** on 2026-11-20. This is the generated `module/db-assistant.min.js` bundle.
 - **Slow 3G:** Measured on 2026-11-16 by `scripts/measure-slow3g.ps1` against `http://localhost:18040/demo/blank.html` using Lighthouse simulated throttling (`400 ms` RTT, `400 Kbps` throughput, `4x` CPU slowdown): observed load **76 ms**, First Contentful Paint **153 ms**, performance score **0.81**. This is a local simulated result, not a deployed-network measurement.
 - **Rough cost for 3,000 learners:** With an institution-provided host, local open-source inference, and external SMS/AI disabled, the software/API subscription cost is approximately **$0 per month**. This excludes the host's hardware, electricity, internet, operations, and any optional paid messaging. No load test or concurrency profile for 3,000 learners has been completed, so infrastructure cost and capacity need a measured deployment profile before launch.
 - **Direct runtime dependencies and licenses:** FastAPI (MIT), Uvicorn (BSD-3-Clause), cryptography (Apache-2.0 OR BSD-3-Clause), HTTPX (BSD-3-Clause), and ruamel.yaml (MIT). Browser/test tooling: `@axe-core/playwright` (MPL-2.0), `@playwright/test` (Apache-2.0), and Terser (BSD-2-Clause). The lock files identify exact versions; review transitive package, base-image, and any separately provisioned speech-model licenses before redistribution.
@@ -386,4 +424,4 @@ The component currently has locale packs for English, Amharic, Tigrinya, Afaan O
 
 ## License
 
-**TEAM DECISION REQUIRED:** The supplied Track 3 guide says to use the open license named by ALX at kick-off, but the provided guide copy and repository do not name it. Ask the mentor/ALX team which license was selected, then add that exact license as the root `LICENSE` file before submission. Do not treat this README placeholder as a grant to redistribute the code.
+**TEAM DECISION REQUIRED:** The repository does not record which open-source license ALX selected at kick-off. Confirm the selected license with the mentor/ALX team, then add that exact license as the root `LICENSE` file before submission. Do not treat this README placeholder as a grant to redistribute the code.

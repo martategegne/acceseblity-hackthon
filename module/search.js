@@ -185,8 +185,13 @@ export function search(question, sections = [], lang = "en") {
   };
 }
 
+export function hasCourseContext(searchResult) {
+  return Boolean(searchResult?.best?.score > 0)
+    || Boolean(searchResult?.others?.some((match) => match.score > 0));
+}
+
 if (typeof globalThis !== "undefined") {
-  globalThis.DbSearch = { search, THRESHOLD, tokenize, stripPunctuation, scoreSection, STOP_WORDS, AMHARIC_TITLES };
+  globalThis.DbSearch = { search, hasCourseContext, THRESHOLD, tokenize, stripPunctuation, scoreSection, STOP_WORDS, AMHARIC_TITLES };
 }
 
 export default search;

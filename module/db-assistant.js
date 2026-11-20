@@ -910,7 +910,7 @@
         btn.type = "button";
         btn.className = "person-action";
         btn.textContent = this._pack?.strings.person || (lang === "am" ? am.strings.person : en.strings.person);
-        btn.addEventListener("click", () => this._emit("person", {}));
+        btn.addEventListener("click", () => this._openEscalation());
         div.appendChild(btn);
       }
 
@@ -1382,7 +1382,8 @@
             .map((source) => ({ url: source.url, title: source.title || source.type || "Source" }))
           : [];
         this._appendMessage({ role: "assistant", text: result.answer, lang: language,
-          links, answerStatus: result.answerStatus });
+          links, answerStatus: result.answerStatus,
+          showPerson: ["not_found", "off_topic"].includes(result.answerStatus) });
         return { ok: true, retryable: false };
       } catch { return { ok: false, retryable: true }; }
     }
@@ -1541,21 +1542,25 @@
           cachedCourseContent: true
         });
       } else {
-        // If best is null, answer the i18n string "I could not find this in the course"
-        // and show the Talk to a person button.
-        const notFoundText = this._pack?.strings.notFound || (currentLang === "am" ? am.strings.notFound : en.strings.notFound);
+        const hasCourseContext = this._searchModule?.hasCourseContext
+          ? this._searchModule.hasCourseContext(searchResult)
+          : allMatches.some((match) => match.score > 0);
+        const scopeIsKnown = Boolean(searchFn && this._sections.length);
+        const answerStatus = scopeIsKnown && !hasCourseContext ? "off_topic" : "not_found";
+        const responseText = hasCourseContext
+          ? (this._pack?.strings.notFound || (currentLang === "am" ? am.strings.notFound : en.strings.notFound))
+          : (this._pack?.strings.offTopic || en.strings.offTopic);
         const topScore = searchResult.others?.[0]?.score || 0;
 
-        // Ensure header person button is also visible and prominent
         if (this._els.person) this._els.person.hidden = false;
 
         this._appendMessage({
           role: "assistant",
-          text: notFoundText,
+          text: responseText,
           lang: currentLang,
           score: topScore,
           showPerson: true,
-          answerStatus: "not_found"
+          answerStatus
         });
       }
       if (wasQueued) this._appendOfflineSaved(currentLang);

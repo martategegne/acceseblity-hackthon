@@ -47,11 +47,40 @@ def test_health_endpoints_report_database_and_content_readiness(client):
 def test_ask_reports_when_course_evidence_is_not_found(client, monkeypatch):
     monkeypatch.setenv("THRESHOLD", "1.1")
     response = client.post("/api/v1/ask", json={
-        "question": "How many moons orbit an imaginary planet?",
+        "question": "What salary range do virtual assistants earn?",
         "language": "en",
     })
     assert response.status_code == 200
     assert response.json()["answerStatus"] == "not_found"
+    assert response.json()["sources"] == []
+
+
+def test_ask_reports_off_topic_questions_and_localizes_amharic(client):
+    english = client.post("/api/v1/ask", json={
+        "question": "Where can I buy train tickets for Madrid?",
+        "language": "en",
+    })
+    amharic = client.post("/api/v1/ask", json={
+        "question": "Where can I buy train tickets for Madrid?",
+        "language": "am",
+    })
+
+    assert english.status_code == amharic.status_code == 200
+    assert english.json()["answer"] == "I can only help with this course. Would you like a person to help?"
+    assert english.json()["answerStatus"] == amharic.json()["answerStatus"] == "off_topic"
+    assert amharic.json()["answer"] != english.json()["answer"]
+    assert english.json()["sources"] == amharic.json()["sources"] == []
+
+
+def test_ask_preserves_sensitive_topic_refusal(client):
+    response = client.post("/api/v1/ask", json={
+        "question": "Can you give me legal advice?",
+        "language": "en",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["answerStatus"] == "refused"
+    assert "medical, legal, or immigration advice" in response.json()["answer"]
     assert response.json()["sources"] == []
 
 

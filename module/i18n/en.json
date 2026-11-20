@@ -17,6 +17,7 @@
     "assistant": "Assistant",
     "tutor": "Tutor",
     "notFound": "I could not find this in the course",
+    "offTopic": "I can only help with this course. Would you like a person to help?",
     "readInCourse": "Read in the course",
     "microphone": "Use microphone",
     "stop": "Stop",
