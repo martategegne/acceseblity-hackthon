@@ -17,6 +17,7 @@ for (const [name, route] of pages) {
     const launcher = assistant.locator("#launcher");
     await expect(launcher).toBeEnabled();
     await launcher.click();
+    await assistant.locator("#lesson-explore > summary").click();
     await expect(assistant.locator('[role="dialog"]')).toBeVisible();
 
     const results = await new AxeBuilder({ page })
@@ -32,6 +33,41 @@ for (const [name, route] of pages) {
     expect(severe, JSON.stringify(report, null, 2)).toEqual([]);
   });
 }
+
+test("axe: answer actions and lesson citation", async ({ page }) => {
+  await page.route("**/api/v1/config", (route) => route.fulfill({ json: { externalAiConsentRequired: false } }));
+  await page.route("**/api/v1/ask", (route) => route.fulfill({
+    json: {
+      answer: "A grounded answer for this lesson section.",
+      sources: [{ url: "/savanna/pages/concept-with-navigation.html#what-is-shaping-the-future-of-va-work", title: "What is Shaping the Future" }]
+    }
+  }));
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+  await expect(assistant.locator("#language-select")).toHaveValue("en");
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#lesson-explore > summary").click();
+  await assistant.locator("#question").fill("What does this lesson say?");
+  await assistant.locator("#send").click();
+  const answer = assistant.locator("#messages .message-assistant").last();
+  await expect(answer.locator(".copy-answer")).toBeVisible();
+  await expect(answer.locator(".listen-button")).toBeVisible();
+  await expect(answer.locator(".course-link")).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  const severe = results.violations.filter((violation) => ["critical", "serious"].includes(violation.impact));
+  const report = severe.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    help: violation.help,
+    nodes: violation.nodes.map((node) => ({ target: node.target, summary: node.failureSummary }))
+  }));
+  expect(severe, JSON.stringify(report, null, 2)).toEqual([]);
+});
 
 test("axe: queued-question controls", async ({ page, context }) => {
   await page.goto("/demo/blank.html");
