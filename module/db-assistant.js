@@ -55,6 +55,8 @@
       this._messages = [];
       this._studyPack = [];
       this._sections = [];
+      this._lessonContentStatus = "loading";
+      this._englishStrings = {};
       this._jobs = [];
       this._searchModule = null;
       this._recognition = null;
@@ -164,18 +166,27 @@
       const url = attr
         ? new URL(attr, document.baseURI).href
         : new URL("../demo/data/content.json", scriptUrl).href;
+      this._lessonContentStatus = "loading";
+      this._renderLessonSuggestions();
+      let contentLoaded = false;
       try {
         const resp = await fetch(url);
-        if (resp.ok) {
-          const sections = await resp.json();
-          this._sections = Array.isArray(sections) ? sections.map((section) => ({ ...section, type: section.type || "lesson" })) : [];
-          try { localStorage.setItem(`${this._storageKey}:content`, JSON.stringify(this._sections)); } catch { /* Storage may be disabled or full. */ }
-        }
+        if (!resp.ok) throw new Error(`Lesson content returned HTTP ${resp.status}`);
+        const sections = await resp.json();
+        this._sections = Array.isArray(sections) ? sections.map((section) => ({ ...section, type: section.type || "lesson" })) : [];
+        contentLoaded = true;
+        try { localStorage.setItem(`${this._storageKey}:content`, JSON.stringify(this._sections)); } catch { /* Storage may be disabled or full. */ }
       } catch (err) {
         console.warn("Could not load content sections from", url, err);
         try {
-          const cached = JSON.parse(localStorage.getItem(`${this._storageKey}:content`) || "[]");
-          if (Array.isArray(cached)) this._sections = cached;
+          const cachedContent = localStorage.getItem(`${this._storageKey}:content`);
+          if (cachedContent) {
+            const cached = JSON.parse(cachedContent);
+            if (Array.isArray(cached)) {
+              this._sections = cached;
+              contentLoaded = true;
+            }
+          }
         } catch { /* Keep an empty source when local storage is unavailable. */ }
       }
       try {
@@ -194,6 +205,8 @@
           this._populateAccommodationChoices();
         } catch { /* An empty jobs source is still usable for lesson questions. */ }
       }
+      this._lessonContentStatus = contentLoaded ? "ready" : "error";
+      this._renderLessonSuggestions();
     }
 
     _jobSections() {
@@ -219,6 +232,98 @@
         }
         return { ...job, type: "job", title: job.title, titles, text };
       });
+    }
+
+    _renderLessonSuggestions() {
+      const e = this._els;
+      if (!e?.lessonExplore || !this._pack) return;
+
+      const strings = this._pack.strings;
+      const english = this._englishStrings;
+      const nativeStrings = new Set(this._pack.localizedStrings || []);
+      const isNative = (key) => this._pack.lang === "en" || nativeStrings.has(key);
+      const write = (node, key) => {
+        node.textContent = strings[key] || english[key] || "";
+        node.lang = isNative(key) ? this._pack.lang : "en";
+        node.dir = node.lang === "ar" ? "rtl" : "ltr";
+      };
+
+      write(e.lessonExploreHeading, "exploreHeading");
+      write(e.lessonExploreDescription, "exploreDescription");
+      write(e.lessonExploreRetry, "exploreRetry");
+      e.lessonExploreList.replaceChildren();
+      e.lessonExploreFallback.hidden = true;
+      e.lessonExploreFallback.textContent = "";
+      e.lessonExploreStatus.textContent = "";
+
+      const state = this._lessonContentStatus;
+      e.lessonExplore.setAttribute("aria-busy", String(state === "loading"));
+      e.lessonExploreRetry.hidden = state !== "error";
+      e.lessonExploreRetry.disabled = state === "loading";
+      if (state === "loading") {
+        write(e.lessonExploreStatus, "exploreLoading");
+        return;
+      }
+      if (state === "error") {
+        write(e.lessonExploreStatus, "exploreError");
+        return;
+      }
+
+      const currentPath = window.location.pathname;
+      const sections = this._sections.filter((section) => {
+        if (!section || section.type === "job" || typeof section.url !== "string") return false;
+        try {
+          const source = new URL(section.url, window.location.href);
+          return source.origin === window.location.origin &&
+            source.pathname === currentPath &&
+            typeof section.text?.en === "string" && section.text.en.trim();
+        } catch {
+          return false;
+        }
+      }).slice(0, 3);
+
+      if (!sections.length) {
+        write(e.lessonExploreStatus, "exploreEmpty");
+        return;
+      }
+
+      const language = this._pack.lang;
+      const hasLocalizedTemplate = language === "en" || nativeStrings.has("exploreQuestionTemplate");
+      let usedFallback = false;
+      for (const section of sections) {
+        const localizedTitle = section.titles?.[language];
+        const localizedText = section.text?.[language];
+        const useLocalized = hasLocalizedTemplate &&
+          typeof localizedTitle === "string" && localizedTitle.trim() &&
+          typeof localizedText === "string" && localizedText.trim();
+        const questionLanguage = useLocalized ? language : "en";
+        const fallbackTitle = section.titles?.en || section.title;
+        const title = useLocalized
+          ? localizedTitle.trim()
+          : (typeof fallbackTitle === "string" ? fallbackTitle.trim() : "");
+        const template = useLocalized
+          ? strings.exploreQuestionTemplate
+          : english.exploreQuestionTemplate;
+        if (!title || !template) continue;
+        if (!useLocalized) usedFallback = true;
+
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "lesson-suggestion";
+        button.textContent = template.replace("{title}", title);
+        button.dataset.question = button.textContent;
+        button.lang = questionLanguage;
+        button.dir = questionLanguage === "ar" ? "rtl" : "auto";
+        item.append(button);
+        e.lessonExploreList.append(item);
+      }
+
+      if (usedFallback) {
+        write(e.lessonExploreFallback, "exploreFallback");
+        e.lessonExploreFallback.hidden = false;
+      }
+      if (!e.lessonExploreList.childElementCount) write(e.lessonExploreStatus, "exploreEmpty");
     }
 
     _populateAccommodationChoices() {
@@ -253,13 +358,15 @@
       this.shadowRoot.innerHTML = `
         <style>
       :host {
-            --guide-paper: #f8f6ef;
-            --guide-surface: #fffdf8;
-            --guide-ink: #1b2b21;
-            --guide-muted: #46594c;
-            --guide-line: #cbd5c8;
-            --guide-wash: #eaf0e7;
-            --guide-accent: #88411f;
+            --guide-paper: #fffaf2;
+            --guide-surface: #fffefb;
+            --guide-ink: #183025;
+            --guide-muted: #4a5e51;
+            --guide-line: #d5e0d5;
+            --guide-wash: #edf4ec;
+            --guide-accent: #984b2c;
+            --guide-accent-soft: #f7e7dc;
+            --guide-shadow: 0 20px 56px rgba(20, 46, 31, .2);
         all: initial;
         display: block;
         color: var(--assistant-foreground, var(--guide-ink));
@@ -275,47 +382,65 @@
             --guide-line: #4b5b4e;
             --guide-wash: #26372b;
         --guide-accent: #efb887;
+        --guide-accent-soft: #352c25;
+        --guide-shadow: 0 20px 56px rgba(0, 0, 0, .55);
+        --assistant-focus: #ffd8a8;
         color-scheme: dark;
       }
       *, *::before, *::after { box-sizing: border-box; }
       button, input, textarea, select { font: inherit; letter-spacing: normal; text-transform: none; }
-          button { min-width: 44px; min-height: 44px; padding: 9px 13px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; transition: background-color .16s ease, border-color .16s ease; }
+          button { min-width: 44px; min-height: 44px; padding: 9px 13px; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
           button:disabled { cursor: wait; opacity: .72; }
-          button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex="-1"]:focus-visible, a:focus-visible { outline: 3px solid var(--assistant-focus, #713815); outline-offset: 3px; }
-          .launcher { position: fixed; z-index: 2147483647; inset-inline-end: 24px; inset-block-end: 24px; display: inline-flex; align-items: center; gap: 11px; max-width: calc(100vw - 32px); padding: 11px 17px; border: 1px solid var(--assistant-primary, #245c3b); border-radius: 4px 4px 2px 4px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); font-weight: 700; box-shadow: 0 6px 18px #14281c2b; }
-          .launcher::before { content: ""; width: 9px; height: 18px; flex: none; border-inline: 2px solid currentColor; opacity: .85; }
-          .launcher:hover:not(:disabled) { filter: brightness(1.08); }
-          .panel { position: fixed; z-index: 2147483646; inset-inline-end: clamp(12px, 2vw, 24px); inset-block-end: 84px; display: block; width: min(27rem, calc(100vw - 32px)); max-height: min(74dvh, 48rem); overflow: hidden; overscroll-behavior: contain; border: 1px solid var(--guide-line); border-block-start: 4px solid var(--guide-accent); border-radius: 5px 5px 3px 5px; background: var(--guide-paper); color: var(--assistant-foreground, var(--guide-ink)); padding: 0; box-shadow: 0 12px 36px #14281c2b; }
+          button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex="-1"]:focus-visible, a:focus-visible { outline: 3px solid var(--assistant-focus, #743719); outline-offset: 3px; }
+          button:hover:not(:disabled) { transform: translateY(-1px); }
+          button:active:not(:disabled) { transform: translateY(0); }
+          .launcher { position: fixed; z-index: 2147483647; inset-inline-end: 24px; inset-block-end: 24px; display: inline-flex; align-items: center; gap: 11px; max-width: calc(100vw - 32px); padding: 12px 19px; border: 1px solid var(--assistant-primary, #245c3b); border-radius: 999px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); font-weight: 750; box-shadow: 0 10px 28px rgba(20, 46, 31, .24); }
+          .launcher::before { content: ""; width: 18px; height: 18px; flex: none; border: 2px solid currentColor; border-radius: 60% 22% 60% 22%; transform: rotate(-35deg); opacity: .9; }
+          .launcher:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 13px 32px rgba(20, 46, 31, .3); }
+          .panel { position: fixed; z-index: 2147483646; inset-inline-end: clamp(12px, 2vw, 24px); inset-block-end: 84px; display: block; width: min(30rem, calc(100vw - 32px)); max-height: min(82dvh, 52rem); overflow: hidden; overscroll-behavior: contain; border: 1px solid var(--guide-line); border-block-start: 4px solid var(--guide-accent); border-radius: 20px; background: linear-gradient(145deg, var(--guide-paper), var(--guide-surface)); color: var(--assistant-foreground, var(--guide-ink)); padding: 0; box-shadow: var(--guide-shadow); animation: assistant-panel-enter .2s ease-out both; }
       .panel[hidden] { display: none; }
-          .panel-inner { display: flex; flex-direction: column; gap: 0; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; scrollbar-color: #829481 transparent; }
-          .header { position: sticky; inset-block-start: -16px; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; margin: -16px -18px 0; padding: 16px 18px 12px; border-block-end: 1px solid var(--guide-line); background: var(--guide-paper); }
+          .panel-inner { display: flex; flex-direction: column; gap: 0; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; scrollbar-color: #829481 transparent; }
+          .header { position: sticky; inset-block-start: -18px; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; margin: -18px -20px 0; padding: 18px 20px 14px; border-block-end: 1px solid var(--guide-line); background: linear-gradient(120deg, var(--guide-paper), var(--guide-wash)); }
       h2, p { margin: 0; overflow-wrap: anywhere; }
           h2 { position: relative; padding-inline-start: 13px; color: var(--assistant-foreground, var(--guide-ink)); font-family: "Noto Serif Ethiopic", Georgia, "Nyala", serif; font-size: clamp(1.2rem, 4vw, 1.45rem); font-weight: 650; line-height: 1.35; letter-spacing: -.015em; }
       h2::before { content: ""; position: absolute; inset-block: 3px; inset-inline-start: 0; width: 3px; background: var(--guide-accent); }
-          #close { background: transparent; color: var(--assistant-foreground, var(--guide-ink)); border-color: var(--guide-line); }
+          #close { min-width: 44px; padding-inline: 10px; border-radius: 50%; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); border-color: var(--guide-line); }
           #close:hover:not(:disabled) { background: var(--guide-wash); }
-          .person { grid-column: 1 / -1; justify-self: start; background: transparent; color: var(--assistant-foreground, var(--guide-ink)); border: 0; border-inline-start: 2px solid var(--guide-accent); border-radius: 0; font-weight: 700; text-align: start; }
+          .person { grid-column: 1 / -1; justify-self: stretch; background: var(--guide-accent-soft); color: var(--assistant-foreground, var(--guide-ink)); border: 1px solid var(--guide-line); border-inline-start: 4px solid var(--guide-accent); border-radius: 12px; font-weight: 750; text-align: start; }
           .person:hover:not(:disabled), .accommodation-open:hover:not(:disabled) { background: var(--guide-wash); }
           .accommodation-open { justify-self: start; margin-block-start: 10px; background: transparent; color: var(--guide-muted); border-color: transparent; text-align: start; }
           .secondary { background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); border-color: #718276; }
           .secondary:hover:not(:disabled) { background: var(--guide-wash); border-color: var(--assistant-primary, #245c3b); }
-          .language { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; margin-block: 12px; padding: 9px 11px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); background: var(--guide-wash); }
+          .language { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; margin-block: 14px; padding: 10px 12px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 12px; background: var(--guide-wash); }
           .language-label, label { font-weight: 650; }
           [aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 1px; }
-          #locale-status { margin-block: 0 10px; padding: 8px 10px; border-inline-start: 3px solid var(--guide-accent); background: var(--guide-wash); color: var(--assistant-foreground, var(--guide-ink)); }
-          #greeting { margin-block-end: 8px; padding: 2px 0 10px 12px; border-inline-start: 2px solid var(--guide-accent); color: var(--guide-muted); font-family: "Noto Serif Ethiopic", Georgia, "Nyala", serif; font-size: 1.02em; }
-          .log { display: flex; flex-direction: column; gap: 10px; max-height: min(34dvh, 23rem); min-height: 2.5rem; overflow-y: auto; padding: 5px 0 12px; border-block-end: 1px solid var(--guide-line); scroll-behavior: smooth; }
+          #locale-status { margin-block: 0 10px; padding: 9px 11px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 10px; background: var(--guide-wash); color: var(--assistant-foreground, var(--guide-ink)); }
+          #greeting { margin-block-end: 10px; padding: 10px 12px; border-inline-start: 3px solid var(--guide-accent); border-radius: 0 12px 12px 0; background: var(--guide-accent-soft); color: #253d30; font-family: "Noto Serif Ethiopic", Georgia, "Nyala", serif; font-size: 1.02em; }
+          :host([theme="dark"]) #greeting { color: #e7eee9; }
+          .log { display: flex; flex-direction: column; gap: 12px; max-height: min(38dvh, 26rem); min-height: 2.5rem; overflow-y: auto; padding: 10px 4px 14px; border-block-end: 1px solid var(--guide-line); scroll-behavior: smooth; }
           .log:empty { min-height: 0; padding-block: 0; border: 0; }
-          .offline-queue { display: grid; gap: 10px; margin-block-start: 12px; padding: 13px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); background: var(--guide-wash); }
-          .study-pack { display: grid; gap: 10px; margin-block-start: 12px; padding: 13px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--assistant-primary, #245c3b); background: var(--guide-wash); }
+          .offline-queue { display: grid; gap: 10px; margin-block-start: 12px; padding: 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 14px; background: var(--guide-wash); }
+          .study-pack { display: grid; gap: 10px; margin-block-start: 12px; padding: 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--assistant-primary, #245c3b); border-radius: 14px; background: var(--guide-wash); }
       .study-pack h3, .study-pack p { margin: 0; }
-      .study-card { display: grid; gap: 6px; padding: 11px; border: 1px solid var(--guide-line); background: var(--guide-surface); }
+      .study-card { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--guide-line); border-radius: 11px; background: var(--guide-surface); }
       .study-card p { white-space: pre-wrap; }
+      .lesson-explore { display: grid; gap: 9px; margin-block: 12px; padding: 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 14px; background: var(--guide-wash); }
+      .lesson-explore h3, .lesson-explore p { margin: 0; }
+      .lesson-explore h3 { color: var(--assistant-foreground, var(--guide-ink)); font-size: 1rem; }
+      .lesson-explore-description { color: #435448; font-size: .92em; }
+      :host([theme="dark"]) .lesson-explore-description { color: #d0dbd1; }
+      .lesson-suggestions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .lesson-suggestions li { min-width: 0; }
+      .lesson-suggestion { width: 100%; min-height: 48px; border: 1px solid var(--guide-line); border-radius: 11px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); text-align: start; white-space: normal; overflow-wrap: anywhere; }
+      .lesson-suggestion:hover:not(:disabled) { border-color: var(--assistant-primary, #245c3b); background: var(--guide-paper); }
+      .lesson-explore-fallback, .lesson-explore-status { padding: 8px 10px; border-radius: 9px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); font-size: .9em; }
+      .lesson-explore-fallback { border-inline-start: 3px solid var(--guide-accent); }
+      .lesson-explore-retry { justify-self: start; }
       .offline-queue[hidden] { display: none; }
       .offline-queue h3, .queue-question { margin: 0; overflow-wrap: anywhere; }
       .offline-queue h3 { font-size: 1rem; }
           .queue-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-          .queue-item { display: grid; gap: 8px; padding: 11px; border: 1px solid var(--guide-line); background: var(--guide-surface); }
+          .queue-item { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--guide-line); border-radius: 11px; background: var(--guide-surface); }
       .queue-status, .queue-live-status { margin: 0; font-size: .9em; }
       .queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
       .queue-actions button, .queue-editor button { min-height: 40px; }
@@ -323,18 +448,19 @@
       .queue-editor[hidden] { display: none; }
           .queue-editor textarea { width: 100%; min-height: 5rem; padding: 8px; border: 1px solid #718276; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
           .queue-live-status { color: var(--assistant-foreground, var(--guide-ink)); }
-          .message { width: fit-content; max-width: 100%; margin: 0; padding: 11px 13px; border-radius: 3px; overflow-wrap: anywhere; }
-          .message-user { align-self: flex-end; border: 1px solid var(--guide-line); border-inline-end: 3px solid var(--guide-accent); background: var(--guide-wash); color: var(--assistant-foreground, var(--guide-ink)); }
-          .message-assistant { align-self: flex-start; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--assistant-primary, #245c3b); background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
+          .message { width: fit-content; max-width: 92%; margin: 0; padding: 12px 14px; border: 1px solid var(--guide-line); border-radius: 16px; overflow-wrap: anywhere; box-shadow: 0 3px 10px rgba(22, 43, 30, .045); }
+          .message-user { align-self: flex-end; border-color: var(--assistant-primary, #245c3b); border-inline-end: 3px solid var(--guide-accent); border-radius: 16px 16px 4px 16px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); }
+          .message-assistant { align-self: flex-start; border-inline-start: 3px solid var(--assistant-primary, #245c3b); border-radius: 16px 16px 16px 4px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
           .message-assistant[data-answer-status="off_topic"], .message-assistant[data-answer-status="refused"] { border-inline-start-color: var(--guide-accent); }
           .message-author { font-weight: 750; margin-bottom: 3px; font-size: .86em; color: var(--assistant-primary, #245c3b); }
+          .message-user .message-author, .message-user .message-time { color: var(--assistant-primary-contrast, #fff); }
           .message-time { display: block; margin-block-end: 5px; color: var(--guide-muted); font-size: .78em; }
           .evidence-label { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--guide-line); font-size: .88em; font-weight: 650; color: var(--assistant-foreground, var(--guide-muted)); }
-          .course-link { display: flex; align-items: baseline; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--guide-line); color: var(--assistant-primary, #245c3b); font-weight: 700; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+          .course-link { display: flex; align-items: baseline; gap: 8px; min-height: 44px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--assistant-primary, #245c3b); border-radius: 10px; background: var(--guide-wash); color: var(--assistant-primary, #245c3b); font-weight: 750; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
           .course-link::after { content: "↗"; flex: none; font-size: .9em; text-decoration: none; }
       .course-link:hover, .course-link:focus { text-decoration-thickness: 2px; }
       .debug-score { font-size: .8em; color: var(--guide-muted); margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-          .person-action { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 12px; background: var(--guide-wash); color: var(--assistant-foreground, var(--guide-ink)); border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 2px; font-weight: 700; cursor: pointer; text-align: start; }
+          .person-action { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 13px; background: var(--guide-accent-soft); color: var(--assistant-foreground, var(--guide-ink)); border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 10px; font-weight: 750; cursor: pointer; text-align: start; }
       .voice-controls { display: flex; flex-wrap: wrap; gap: 8px; }
       .listen-button { display: block; margin-top: 8px; }
       .voice-status { min-height: 1.5em; margin: 0; }
@@ -352,23 +478,24 @@
       .screen-share-bar button { flex: none; color: #fff; background: #7f1d1d; border: 2px solid #7f1d1d; }
       .voice-button[aria-pressed="true"] { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
       form, .field { display: flex; flex-direction: column; gap: 8px; }
-          #form { margin-block-start: 12px; padding-block-start: 12px; border-block-start: 1px solid var(--guide-line); }
-          select { min-height: 44px; max-width: 100%; padding: 9px 12px; color: var(--assistant-foreground, var(--guide-ink)); background: var(--guide-surface); border: 1px solid #718276; border-radius: 3px; }
-          textarea { width: 100%; min-height: 4.5rem; max-height: 35vh; resize: vertical; padding: 11px 12px; border: 1px solid #718276; border-radius: 3px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
+          #form { margin-block-start: 14px; padding: 14px; border: 1px solid var(--guide-line); border-radius: 14px; background: var(--guide-surface); }
+          select { min-height: 44px; max-width: 100%; padding: 9px 12px; color: var(--assistant-foreground, var(--guide-ink)); background: var(--guide-surface); border: 1px solid #718276; border-radius: 10px; }
+          textarea { width: 100%; min-height: 4.5rem; max-height: 35vh; resize: vertical; padding: 12px 13px; border: 1px solid #718276; border-radius: 12px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
       textarea:focus, select:focus, input[type="tel"]:focus { border-color: var(--assistant-primary, #245c3b); }
-          input[type="tel"] { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #718276; border-radius: 3px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
+          input[type="tel"] { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #718276; border-radius: 10px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
       textarea::placeholder { color: var(--guide-muted); opacity: 1; }
-          .error { margin: 0; padding: 8px 10px; border-inline-start: 3px solid #8b3024; background: #fff0e9; color: #74271d; }
-          :host([theme="dark"]) .error { border-inline-start-color: #ffc1b8; background: #3a2825; color: #ffc1b8; }
-          #send { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); border: 1px solid var(--assistant-primary, #245c3b); border-radius: 3px; font-weight: 750; }
-          #send:hover:not(:disabled) { filter: brightness(1.08); }
+          .error { margin: 0; padding: 9px 11px; border: 1px solid #e8b7a9; border-inline-start: 3px solid #8b3024; border-radius: 10px; background: #fff0e9; color: #74271d; }
+          :host([theme="dark"]) .error { border-color: #7c5148; border-inline-start-color: #ffc1b8; background: #3a2825; color: #ffc1b8; }
+          #send { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; background: #1e5638; color: #fff; border: 1px solid #1e5638; border-radius: 999px; font-weight: 750; box-shadow: 0 5px 14px rgba(24, 63, 39, .18); }
+          #send:hover:not(:disabled) { background: #17452d; border-color: #17452d; box-shadow: 0 8px 18px rgba(24, 63, 39, .24); }
           #send[aria-busy="true"]::after { content: ""; width: 14px; height: 14px; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: guide-spin .8s linear infinite; }
           @keyframes guide-spin { to { transform: rotate(360deg); } }
+          @keyframes assistant-panel-enter { from { opacity: 0; } to { opacity: 1; } }
           .course-link, .message-body, .queue-question { overflow-wrap: anywhere; }
           @media (max-width: 720px) {
-                .panel { inset-inline: 0; inset-block-end: 0; width: 100%; max-height: min(74dvh, calc(100dvh - 3rem)); border-radius: 8px 8px 0 0; }
-                .panel-inner { padding: 15px max(15px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(15px, env(safe-area-inset-left)); }
-                .header { inset-block-start: -15px; margin: -15px -15px 0; padding: 15px 15px 11px; }
+                .panel { inset-inline: 0; inset-block-end: 0; width: 100%; max-height: min(74dvh, calc(100dvh - 3rem)); border-radius: 20px 20px 0 0; }
+                .panel-inner { padding: 17px max(16px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+                .header { inset-block-start: -17px; margin: -17px -16px 0; padding: 17px 16px 12px; }
                 .log { max-height: min(29dvh, 18rem); }
             .launcher { position: static; display: inline-flex; margin: 12px 12px 12px auto; max-width: calc(100vw - 24px); }
                 .language { grid-template-columns: auto minmax(0, 1fr); gap: 8px; margin-block: 8px; padding: 7px 9px; }
@@ -415,6 +542,14 @@
               <ul class="queue-list" id="offline-queue-list"></ul>
             </section>
             <p class="queue-live-status" id="offline-queue-status" role="status" aria-live="polite" aria-atomic="true"></p>
+            <section class="lesson-explore" id="lesson-explore" aria-labelledby="lesson-explore-heading" aria-busy="true">
+              <h3 id="lesson-explore-heading"></h3>
+              <p class="lesson-explore-description" id="lesson-explore-description"></p>
+              <p class="lesson-explore-fallback" id="lesson-explore-fallback" role="status" aria-live="polite" hidden></p>
+              <p class="lesson-explore-status" id="lesson-explore-status" role="status" aria-live="polite" aria-atomic="true"></p>
+              <ul class="lesson-suggestions" id="lesson-explore-list" aria-describedby="lesson-explore-description"></ul>
+              <button type="button" class="secondary lesson-explore-retry" id="lesson-explore-retry" hidden></button>
+            </section>
             <form id="form" novalidate>
               <div class="field"><label id="question-label" for="question"></label>
                 <textarea id="question" name="question" dir="auto" autocomplete="off" aria-required="true"></textarea>
@@ -519,6 +654,13 @@
         questionQueueHeading: $("offline-queue-heading"),
         questionQueueList: $("offline-queue-list"),
         questionQueueStatus: $("offline-queue-status"),
+        lessonExplore: $("lesson-explore"),
+        lessonExploreHeading: $("lesson-explore-heading"),
+        lessonExploreDescription: $("lesson-explore-description"),
+        lessonExploreFallback: $("lesson-explore-fallback"),
+        lessonExploreStatus: $("lesson-explore-status"),
+        lessonExploreList: $("lesson-explore-list"),
+        lessonExploreRetry: $("lesson-explore-retry"),
         form: $("form"),
         label: $("question-label"),
         input: $("question"),
@@ -578,6 +720,17 @@
       e.launcher.addEventListener("click", () => this._open());
       e.close.addEventListener("click", () => this._close());
       e.studyPackExport.addEventListener("click", () => this._exportStudyPack());
+      e.lessonExploreList.addEventListener("click", (event) => {
+        const button = event.target.closest?.("button[data-question]");
+        if (!button || !e.lessonExploreList.contains(button)) return;
+        e.input.value = button.dataset.question;
+        e.input.dispatchEvent(new Event("input", { bubbles: true }));
+        e.input.focus();
+        e.lessonExploreStatus.textContent = this._pack?.strings.exploreInserted || this._englishStrings.exploreInserted || "";
+        e.lessonExploreStatus.lang = this._pack?.localizedStrings?.includes("exploreInserted") ? this._pack.lang : "en";
+        e.lessonExploreStatus.dir = e.lessonExploreStatus.lang === "ar" ? "rtl" : "ltr";
+      });
+      e.lessonExploreRetry.addEventListener("click", () => this._loadContent());
       e.form.addEventListener("submit", (event) => this._onSubmit(event));
       this._onlineHandler = () => { this._flushQuestionQueue(); this._flushVoiceActionQueue(); };
       window.addEventListener("online", this._onlineHandler);
@@ -1079,10 +1232,12 @@
       }
       if (token !== this._loadToken) return;
       const missingStrings = Object.keys(english.strings).filter((key) => !pack.strings?.[key]);
+      this._englishStrings = english.strings;
       this._applyPack({
         ...pack,
         lang: requested,
         strings: { ...english.strings, ...(pack.strings || {}) },
+        localizedStrings: Object.keys(pack.strings || {}),
         incomplete: pack.incomplete === true || missingStrings.length > 0
       });
     }
@@ -1176,6 +1331,7 @@
       this._renderMessages();
       this._renderStudyPack();
       this._renderQuestionQueue();
+      this._renderLessonSuggestions();
       this._emit("ready", { lang: pack.lang, dir: this.dir });
     }
 
