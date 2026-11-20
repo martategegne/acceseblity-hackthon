@@ -86,10 +86,17 @@ test("keyboard-only lesson flow reaches language, answer citation, and tutor req
   await expect(languageSelect).toBeFocused();
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Tab");
-  await expect(assistant.locator("#question")).toBeFocused();
   await expect.poll(() => assistant.evaluate((element) => element._pack?.lang)).toBe("am");
+  await expect(assistant.locator("#lesson-explore-list button").first()).toHaveAttribute("lang", "am");
+  await page.keyboard.press("Tab");
+  const firstSuggestion = assistant.locator("#lesson-explore-list button").first();
+  await expect(firstSuggestion).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(assistant.locator("#question")).toBeFocused();
+  await expect(assistant.locator("#question")).toHaveValue(await firstSuggestion.getAttribute("data-question"));
 
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
   await page.keyboard.type(amharicQuestion);
   await page.keyboard.press("Enter");
   const answer = assistant.locator("#messages .message-assistant").last();
@@ -97,8 +104,12 @@ test("keyboard-only lesson flow reaches language, answer citation, and tutor req
   const citation = answer.locator("a.course-link");
   await expect(citation).toHaveAttribute("href", /concept-with-navigation\.html#/);
 
-  for (let tab = 0; tab < 4; tab++) await page.keyboard.press("Shift+Tab");
-  await expect(citation).toBeFocused();
+  let citationFocused = await citation.evaluate((element) => element.getRootNode().activeElement === element);
+  for (let tab = 0; tab < 24 && !citationFocused; tab++) {
+    await page.keyboard.press("Shift+Tab");
+    citationFocused = await citation.evaluate((element) => element.getRootNode().activeElement === element);
+  }
+  expect(citationFocused).toBeTruthy();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#artificial-intelligence-and-the-future-of-va-work/);
 
