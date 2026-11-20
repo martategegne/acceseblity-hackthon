@@ -391,7 +391,7 @@
       button, input, textarea, select { font: inherit; letter-spacing: normal; text-transform: none; }
           button { min-width: 44px; min-height: 44px; padding: 9px 13px; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
           button:disabled { cursor: wait; opacity: .72; }
-          button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex="-1"]:focus-visible, a:focus-visible { outline: 3px solid var(--assistant-focus, #743719); outline-offset: 3px; }
+          button:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex="-1"]:focus-visible, a:focus-visible { outline: 3px solid var(--assistant-focus, #743719); outline-offset: 3px; }
           button:hover:not(:disabled) { transform: translateY(-1px); }
           button:active:not(:disabled) { transform: translateY(0); }
           .launcher { position: fixed; z-index: 2147483647; inset-inline-end: 24px; inset-block-end: 24px; display: inline-flex; align-items: center; gap: 11px; max-width: calc(100vw - 32px); padding: 12px 19px; border: 1px solid var(--assistant-primary, #245c3b); border-radius: 999px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); font-weight: 750; box-shadow: 0 10px 28px rgba(20, 46, 31, .24); }
@@ -424,14 +424,20 @@
       .study-pack h3, .study-pack p { margin: 0; }
       .study-card { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--guide-line); border-radius: 11px; background: var(--guide-surface); }
       .study-card p { white-space: pre-wrap; }
-      .lesson-explore { display: grid; gap: 9px; margin-block: 12px; padding: 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 14px; background: var(--guide-wash); }
-      .lesson-explore h3, .lesson-explore p { margin: 0; }
-      .lesson-explore h3 { color: var(--assistant-foreground, var(--guide-ink)); font-size: 1rem; }
-      .lesson-explore-description { color: #435448; font-size: .92em; }
+      .lesson-explore { display: grid; gap: 10px; margin-block: 12px; padding: 12px 14px; border: 1px solid var(--guide-line); border-inline-start: 4px solid var(--assistant-primary, #245c3b); border-radius: 14px; background: var(--guide-wash); }
+      .lesson-explore p { margin: 0; }
+      .lesson-explore-summary { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 12px; list-style: none; cursor: pointer; }
+      .lesson-explore-summary::-webkit-details-marker { display: none; }
+      .lesson-explore-summary:focus-visible { border-radius: 8px; }
+      .lesson-explore-heading { color: var(--assistant-foreground, var(--guide-ink)); font-size: 1rem; font-weight: 750; line-height: 1.45; }
+      .lesson-explore-chevron { width: 10px; height: 10px; flex: none; border-inline-end: 2px solid var(--assistant-primary, #245c3b); border-block-end: 2px solid var(--assistant-primary, #245c3b); transform: rotate(45deg); transition: transform .16s ease; }
+      .lesson-explore[open] .lesson-explore-chevron { transform: rotate(225deg); }
+      .lesson-explore-description { color: #435448; font-size: .92em; line-height: 1.55; }
       :host([theme="dark"]) .lesson-explore-description { color: #d0dbd1; }
-      .lesson-suggestions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .lesson-suggestions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; margin: 0; padding: 0; list-style: none; }
       .lesson-suggestions li { min-width: 0; }
-      .lesson-suggestion { width: 100%; min-height: 48px; border: 1px solid var(--guide-line); border-radius: 11px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); text-align: start; white-space: normal; overflow-wrap: anywhere; }
+      .lesson-suggestion { width: 100%; min-height: 56px; padding: 12px 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 12px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); font-family: "Noto Sans Ethiopic", "Nyala", system-ui, sans-serif; font-size: .96em; font-weight: 600; line-height: 1.6; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+      .lesson-suggestion:lang(am) { line-height: 1.85; }
       .lesson-suggestion:hover:not(:disabled) { border-color: var(--assistant-primary, #245c3b); background: var(--guide-paper); }
       .lesson-explore-fallback, .lesson-explore-status { padding: 8px 10px; border-radius: 9px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); font-size: .9em; }
       .lesson-explore-fallback { border-inline-start: 3px solid var(--guide-accent); }
@@ -451,6 +457,7 @@
           .message { width: fit-content; max-width: 92%; margin: 0; padding: 12px 14px; border: 1px solid var(--guide-line); border-radius: 16px; overflow-wrap: anywhere; box-shadow: 0 3px 10px rgba(22, 43, 30, .045); }
           .message-user { align-self: flex-end; border-color: var(--assistant-primary, #245c3b); border-inline-end: 3px solid var(--guide-accent); border-radius: 16px 16px 4px 16px; background: var(--assistant-primary, #245c3b); color: var(--assistant-primary-contrast, #fff); }
           .message-assistant { align-self: flex-start; border-inline-start: 3px solid var(--assistant-primary, #245c3b); border-radius: 16px 16px 16px 4px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
+          .message-body { line-height: 1.65; white-space: pre-wrap; }
           .message-assistant[data-answer-status="off_topic"], .message-assistant[data-answer-status="refused"] { border-inline-start-color: var(--guide-accent); }
           .message-author { font-weight: 750; margin-bottom: 3px; font-size: .86em; color: var(--assistant-primary, #245c3b); }
           .message-user .message-author, .message-user .message-time { color: var(--assistant-primary-contrast, #fff); }
@@ -462,7 +469,11 @@
       .debug-score { font-size: .8em; color: var(--guide-muted); margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
           .person-action { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 13px; background: var(--guide-accent-soft); color: var(--assistant-foreground, var(--guide-ink)); border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 10px; font-weight: 750; cursor: pointer; text-align: start; }
       .voice-controls { display: flex; flex-wrap: wrap; gap: 8px; }
-      .listen-button { display: block; margin-top: 8px; }
+      .answer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px; }
+      .answer-actions button { min-height: 44px; }
+      .answer-copy-status { margin-block-start: 6px; color: var(--assistant-foreground, var(--guide-ink)); font-size: .9em; }
+      .answer-copy-status:empty { display: none; }
+      .listen-button { display: inline-flex; }
       .voice-status { min-height: 1.5em; margin: 0; }
       .voice-status:empty { display: none; }
       .voice-note audio { display: block; width: 100%; margin-block: 8px; }
@@ -478,7 +489,7 @@
       .screen-share-bar button { flex: none; color: #fff; background: #7f1d1d; border: 2px solid #7f1d1d; }
       .voice-button[aria-pressed="true"] { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
       form, .field { display: flex; flex-direction: column; gap: 8px; }
-          #form { margin-block-start: 14px; padding: 14px; border: 1px solid var(--guide-line); border-radius: 14px; background: var(--guide-surface); }
+          #form { margin-block-start: 10px; padding: 14px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--assistant-primary, #245c3b); border-radius: 14px; background: var(--guide-surface); }
           select { min-height: 44px; max-width: 100%; padding: 9px 12px; color: var(--assistant-foreground, var(--guide-ink)); background: var(--guide-surface); border: 1px solid #718276; border-radius: 10px; }
           textarea { width: 100%; min-height: 4.5rem; max-height: 35vh; resize: vertical; padding: 12px 13px; border: 1px solid #718276; border-radius: 12px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
       textarea:focus, select:focus, input[type="tel"]:focus { border-color: var(--assistant-primary, #245c3b); }
@@ -542,14 +553,17 @@
               <ul class="queue-list" id="offline-queue-list"></ul>
             </section>
             <p class="queue-live-status" id="offline-queue-status" role="status" aria-live="polite" aria-atomic="true"></p>
-            <section class="lesson-explore" id="lesson-explore" aria-labelledby="lesson-explore-heading" aria-busy="true">
-              <h3 id="lesson-explore-heading"></h3>
+            <details class="lesson-explore" id="lesson-explore" aria-busy="true">
+              <summary class="lesson-explore-summary">
+                <span class="lesson-explore-heading" id="lesson-explore-heading" role="heading" aria-level="3"></span>
+                <span class="lesson-explore-chevron" aria-hidden="true"></span>
+              </summary>
               <p class="lesson-explore-description" id="lesson-explore-description"></p>
               <p class="lesson-explore-fallback" id="lesson-explore-fallback" role="status" aria-live="polite" hidden></p>
               <p class="lesson-explore-status" id="lesson-explore-status" role="status" aria-live="polite" aria-atomic="true"></p>
               <ul class="lesson-suggestions" id="lesson-explore-list" aria-describedby="lesson-explore-description"></ul>
               <button type="button" class="secondary lesson-explore-retry" id="lesson-explore-retry" hidden></button>
-            </section>
+            </details>
             <form id="form" novalidate>
               <div class="field"><label id="question-label" for="question"></label>
                 <textarea id="question" name="question" dir="auto" autocomplete="off" aria-required="true"></textarea>
@@ -1019,16 +1033,52 @@
       }
 
       if (isAssistant) {
+        const answerActions = document.createElement("div");
+        answerActions.className = "answer-actions";
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "secondary copy-answer";
+        copy.textContent = strings.copyAnswer || en.strings.copyAnswer;
+        const actionLanguage = this._pack?.lang === "en" || this._pack?.localizedStrings?.includes("copyAnswer")
+          ? this._pack.lang
+          : "en";
+        copy.lang = actionLanguage;
+        const copyStatus = document.createElement("p");
+        copyStatus.className = "answer-copy-status";
+        copyStatus.setAttribute("role", "status");
+        copyStatus.setAttribute("aria-live", "polite");
+        copyStatus.setAttribute("aria-atomic", "true");
+        copyStatus.lang = actionLanguage;
+        copyStatus.dir = actionLanguage === "ar" ? "rtl" : "ltr";
+        copy.addEventListener("click", async () => {
+          copy.disabled = true;
+          copyStatus.textContent = "";
+          if (typeof navigator.clipboard?.writeText !== "function") {
+            copyStatus.textContent = strings.copyAnswerFailed || en.strings.copyAnswerFailed;
+            copy.disabled = false;
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(content.textContent || "");
+            copyStatus.textContent = strings.answerCopied || en.strings.answerCopied;
+          } catch {
+            copyStatus.textContent = strings.copyAnswerFailed || en.strings.copyAnswerFailed;
+          } finally {
+            copy.disabled = false;
+          }
+        });
         const listen = document.createElement("button");
         listen.type = "button";
         listen.className = "secondary listen-button";
         listen.textContent = this._pack?.strings.listen || (lang === "am" ? am.strings.listen : en.strings.listen);
+        listen.lang = actionLanguage;
         const listenStatus = document.createElement("p");
         listenStatus.className = "voice-status";
         listenStatus.setAttribute("role", "status");
         listenStatus.setAttribute("aria-live", "polite");
         listen.addEventListener("click", () => this._speakText(content.textContent, lang, listenStatus));
-        div.append(listen, listenStatus);
+        answerActions.append(copy, listen);
+        div.append(answerActions, copyStatus, listenStatus);
       }
 
       const links = Array.isArray(message.links)
