@@ -257,6 +257,8 @@ curl -X DELETE "$API/api/v1/escalations/$TICKET_ID" -H "X-Helper-Token: $HELPER_
 
 `POST /sms/inbound` (also `/api/v1/sms/inbound`) accepts a JSON object with `from` and `text`, then returns a `text/plain` response. This is an HTTP simulation of an SMS provider callback; it does **not** send or receive a real SMS. The `PERSON` command creates a ticket and returns a short `STATUS` reference. A helper can send an interim update (ticket remains waiting), send a final reply (ticket becomes answered), or delete that ticket in `/helper`; the same sender then checks it with `STATUS <reference>`. The SMS-created ticket is a separate request from a ticket opened in the browser widget.
 
+The SMS assistant supports English, Amharic, Tigrinya, Afaan Oromo, and Somali. A sender can select a language with `LANG EN`, `LANG AM`, `LANG TI`, `LANG OM`, or `LANG SO`; `HELP` lists commands and `LANG RESET` clears the saved choice. The preference is keyed by a one-way hash of the sender number. With no saved choice, English is used except that Ethiopic-script text is treated as Amharic. Since Tigrinya also uses Ethiopic script and Afaan Oromo/Somali use Latin script, select those languages explicitly for SMS conversations. Course answers include a localized source label; off-topic, not-found, and safety-refusal messages include the localized `PERSON` handoff instruction. Fluent-speaker review is still required; see [TRANSLATION_REVIEW.md](./TRANSLATION_REVIEW.md).
+
 Example local simulation (replace the status reference with the one returned by the first request):
 
 ```bash
@@ -265,6 +267,10 @@ curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
   -d '{"from":"0912345678","text":"PERSON"}'
 curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
   -d '{"from":"0912345678","text":"STATUS ABCD1234"}'
+curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
+  -d '{"from":"0912345678","text":"LANG TI"}'
+curl -sS -X POST "$API/sms/inbound" -H 'Content-Type: application/json' \
+  -d '{"from":"0912345678","text":"HELP"}'
 ```
 
 No inbound SMS provider adapter or public callback is included in this repository; whether an account or credentials are provisioned in the hosting environment must be confirmed by the team. A real two-way SMS deployment still needs a provider account and number, a public HTTPS callback, provider request-signature verification, and an adapter for the provider's request/response format (for example, Twilio form-encoded input and TwiML responses are not accepted by this JSON endpoint). The existing Twilio variables enable only outbound, consent-based job alerts; they do not activate two-way tutor SMS. Outbound alerts also require `OFFLINE_MODE=false`, Twilio credentials, `SMS_ENCRYPTION_KEY`, and a configured sender. Keep all credentials on the server.

@@ -274,9 +274,7 @@ describe("Additional language packs and retrieval", () => {
   for (const language of languages) {
     it(`${language} locale is complete and every course section has localized text, title, and stable source`, () => {
       const pack = JSON.parse(fs.readFileSync(path.resolve(__dirname, `../module/i18n/${language}.json`), "utf-8"));
-      const expectedStringKeys = Object.keys(englishStrings).filter((key) =>
-        language === "am" || key !== "offTopic"
-      );
+      const expectedStringKeys = Object.keys(englishStrings);
       assert.equal(pack.lang, language);
       assert.equal(pack.dir, "ltr");
       assert.deepEqual(Object.keys(pack.strings).sort(), expectedStringKeys.sort());

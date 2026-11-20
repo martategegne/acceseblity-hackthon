@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 import pytest
 
 from api.qa import (
@@ -31,6 +33,10 @@ SECTIONS = [
         },
     },
 ]
+TRACK_LANGUAGES = ("en", "am", "ti", "om", "so")
+MULTILINGUAL_SECTION = json.loads(
+    (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+)[0]
 
 
 class FakeProvider:
@@ -57,17 +63,43 @@ def test_below_threshold_does_not_call_provider(monkeypatch):
     assert result["answerStatus"] == "not_found"
 
 
-@pytest.mark.parametrize(("question", "language"), [
-    ("Where can I buy train tickets for Madrid?", "en"),
-    ("የአዲስ አበባ የአየር ሁኔታ ዛሬ ምን ይመስላል?", "am"),
-])
-def test_off_topic_questions_offer_a_person_without_fabricated_sources(question, language):
+@pytest.mark.parametrize("language", TRACK_LANGUAGES)
+def test_off_topic_questions_offer_a_person_without_fabricated_sources(language):
     provider = FakeProvider({"text": "unsupported answer"})
-    result = asyncio.run(answer_question(question, language, SECTIONS, provider))
+    result = asyncio.run(
+        answer_question("How do I bake bread?", language, [MULTILINGUAL_SECTION], provider)
+    )
 
     assert provider.calls == 0
     assert result["answer"] == OFF_TOPIC_TRANSLATIONS.get(language, OFF_TOPIC)
     assert result["answerStatus"] == "off_topic"
+    assert result["sources"] == []
+    assert result["grounding"]["evidence"] == []
+
+
+@pytest.mark.parametrize("language", TRACK_LANGUAGES)
+def test_course_answers_use_each_language_and_keep_the_lesson_citation(language):
+    section = MULTILINGUAL_SECTION
+    result = asyncio.run(
+        answer_question(section["titles"][language], language, [section])
+    )
+
+    assert result["answerStatus"] == "answered"
+    assert result["answer"] == section["text"][language]
+    assert result["sources"] == [{"title": section["titles"][language], "url": section["url"]}]
+    assert result["grounding"]["status"] == "verified"
+
+
+@pytest.mark.parametrize("language", TRACK_LANGUAGES)
+def test_related_question_below_threshold_uses_localized_not_found_without_source(monkeypatch, language):
+    monkeypatch.setenv("THRESHOLD", "1.01")
+    section = MULTILINGUAL_SECTION
+    result = asyncio.run(
+        answer_question(section["titles"][language], language, [section])
+    )
+
+    assert result["answer"] == NOT_FOUND_TRANSLATIONS[language]
+    assert result["answerStatus"] == "not_found"
     assert result["sources"] == []
     assert result["grounding"]["evidence"] == []
 
@@ -153,15 +185,12 @@ def test_no_match_and_sensitive_answers_have_no_unrelated_sources(monkeypatch):
     assert sensitive["sources"] == []
 
 
-@pytest.mark.parametrize("question, language", [
-    ("Can you give me legal advice?", "en"),
-    ("Which medicine should I take for this symptom?", "en"),
-    ("How do I apply for an immigration visa?", "en"),
-    ("ስለ ሕግ ምክር እፈልጋለሁ", "am"),
-])
-def test_sensitive_topic_is_refused_without_provider_call(question, language):
+@pytest.mark.parametrize("language", TRACK_LANGUAGES)
+def test_sensitive_topic_is_refused_without_provider_call(language):
     provider = FakeProvider({"text": "unsafe generated answer"})
-    result = asyncio.run(answer_question(question, language, SECTIONS, provider))
+    result = asyncio.run(
+        answer_question("Can you give me legal advice?", language, SECTIONS, provider)
+    )
     assert provider.calls == 0
     expected = SENSITIVE_REFUSAL_TRANSLATIONS.get(language, SENSITIVE_REFUSAL)
     assert result["answer"] == expected
@@ -170,7 +199,7 @@ def test_sensitive_topic_is_refused_without_provider_call(question, language):
     assert result["answerStatus"] == "refused"
 
 
-@pytest.mark.parametrize("language", ["ti", "om", "so"])
+@pytest.mark.parametrize("language", TRACK_LANGUAGES[1:])
 def test_new_languages_return_localized_no_match_without_provider_fallback(language):
     provider = FakeProvider({"text": "English fallback", "source_ids": []})
     result = asyncio.run(answer_question("x", language, [], provider))

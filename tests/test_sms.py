@@ -1,7 +1,9 @@
 """Tests for the SMS inbound endpoint (POST /sms/inbound)."""
 import hashlib
 import json
+import re
 import sqlite3
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs
 from fastapi.testclient import TestClient
@@ -11,6 +13,7 @@ from cryptography.fernet import Fernet
 from api.main import (
     app,
     DB_PATH,
+    _RATE_LIMIT_EVENTS,
     connect,
     decrypt_sms_phone,
     format_sms_message,
@@ -19,12 +22,14 @@ from api.main import (
     send_sms_job_alerts,
     _sms_units,
 )
+from api.localization import api_message
 
 
 @pytest.fixture(autouse=True)
 def setup_db(tmp_path, monkeypatch):
     test_db = tmp_path / "test_escalations.sqlite3"
     monkeypatch.setattr("api.main.DB_PATH", test_db)
+    _RATE_LIMIT_EVENTS.clear()
     from api.main import initialize
     initialize()
     yield test_db
@@ -58,7 +63,74 @@ def test_sms_inbound_amharic_question(client):
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/plain")
     assert len(res.text) <= 160
-    assert "Course s2" in res.text
+    assert api_message("am", "sms_source_prefix") in res.text
+
+
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
+def test_sms_language_choice_localizes_course_and_complete_tutor_handoff(client, monkeypatch, language):
+    sender = "+251911123456"
+    sections = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )
+    section = sections[0]
+    selected = client.post("/sms/inbound", json={"from": sender, "text": f"LANG {language.upper()}"})
+    assert selected.status_code == 200
+    assert selected.text == api_message(language, "sms_language_saved")
+
+    course = client.post(
+        "/sms/inbound", json={"from": sender, "text": section["titles"][language]}
+    )
+    assert course.status_code == 200
+    assert api_message(language, "sms_source_prefix") in course.text
+    assert "s1" in course.text
+    assert _sms_units(course.text) <= 160
+
+    off_topic = client.post("/sms/inbound", json={"from": sender, "text": "How do I bake bread?"})
+    assert off_topic.status_code == 200
+    assert api_message(language, "sms_person_instruction") in off_topic.text
+    assert api_message(language, "sms_source_prefix") not in off_topic.text
+
+    opened = client.post("/sms/inbound", json={"from": sender, "text": "PERSON"})
+    reference = re.search(r"STATUS ([A-F0-9]{8})", opened.text)
+    assert reference
+    assert _sms_units(opened.text) <= 160
+    with connect() as db:
+        row = db.execute(
+            "SELECT id, language FROM escalations WHERE page=? ORDER BY created_at DESC LIMIT 1",
+            (f"sms:{hash_phone(sender)}",),
+        ).fetchone()
+    assert row and row["language"] == language
+
+    monkeypatch.setenv("HELPER_TOKEN", "localized-sms-helper-token")
+    helper_headers = {"X-Helper-Token": "localized-sms-helper-token"}
+    update = client.post(
+        f"/api/v1/escalations/{row['id']}/reply",
+        headers=helper_headers,
+        json={"text": "Please review the lesson source.", "resolve": False},
+    )
+    assert update.status_code == 200
+    status = client.post(
+        "/sms/inbound", json={"from": sender, "text": f"STATUS {reference.group(1)}"}
+    )
+    assert status.status_code == 200
+    assert api_message(language, "sms_tutor_update_prefix") in status.text
+    assert "STATUS " + reference.group(1) in status.text
+    assert _sms_units(status.text) <= 160
+
+    closed = client.post(
+        f"/api/v1/escalations/{row['id']}/reply",
+        headers=helper_headers,
+        json={"text": "Please review the lesson source."},
+    )
+    assert closed.status_code == 200
+    final = client.post(
+        "/sms/inbound", json={"from": sender, "text": f"STATUS {reference.group(1)}"}
+    )
+    assert api_message(language, "sms_tutor_reply_prefix") in final.text
+    assert "STATUS " not in final.text
+    assert client.delete(
+        f"/api/v1/escalations/{row['id']}", headers=helper_headers
+    ).status_code == 200
 
 
 def test_sms_inbound_person_command(client):

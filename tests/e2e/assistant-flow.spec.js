@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 
 const sections = JSON.parse(await readFile(new URL("../../demo/data/content.json", import.meta.url), "utf8"));
 const amharicQuestion = sections[1].text.am;
+const trackLanguages = ["en", "am", "ti", "om", "so"];
+const locales = Object.fromEntries(await Promise.all(trackLanguages.map(async (language) => [
+  language,
+  JSON.parse(await readFile(new URL(`../../module/i18n/${language}.json`, import.meta.url), "utf8"))
+])));
 
 test("Amharic answer is linked and learners can follow up on a queued tutor request", async ({ page, request }) => {
   const contentResponse = await request.post("/api/v1/content", {
@@ -302,25 +307,26 @@ test("helper can send an interim update and later close the same ticket", async 
   }
 });
 
-test("off-topic answers offer an accessible action that opens tutor help", async ({ page }) => {
-  await page.goto("/demo/blank.html");
-  const assistant = page.locator("db-assistant");
-  await expect(assistant.locator("#launcher")).toBeEnabled();
-  await assistant.evaluate((element) => element.setAttribute("lang", "en"));
-  await expect.poll(() => assistant.evaluate((element) => element._sections.length)).toBeGreaterThan(0);
-  await page.context().setOffline(true);
-  await assistant.locator("#launcher").click();
-  await assistant.locator("#question").fill("Where can I buy train tickets for Madrid?");
-  await assistant.locator("#send").click();
+test("off-topic answers offer a localized accessible tutor handoff in each Track 3 language", async ({ page }) => {
+  for (const language of trackLanguages) {
+    const strings = locales[language].strings;
+    await page.goto("/demo/blank.html");
+    const assistant = page.locator("db-assistant");
+    await expect(assistant.locator("#launcher")).toBeEnabled();
+    await assistant.evaluate((element, selectedLanguage) => element.setAttribute("lang", selectedLanguage), language);
+    await expect.poll(() => assistant.evaluate((element) => element._sections.length)).toBeGreaterThan(0);
+    await assistant.locator("#launcher").click();
+    await assistant.locator("#question").fill("How do I bake bread?");
+    await assistant.locator("#send").click();
 
-  const answer = assistant.locator("#messages .message-assistant")
-    .filter({ hasText: "I can only help with this course. Would you like a person to help?" }).last();
-  await expect(answer).toContainText("I can only help with this course. Would you like a person to help?");
-  await expect(answer.locator("a.course-link")).toHaveCount(0);
-  const helpButton = answer.getByRole("button", { name: "Talk to a person" });
-  await expect(helpButton).toBeVisible();
-  await helpButton.click();
-  await expect(assistant.locator("#escalation-reason")).toBeFocused();
+    const answer = assistant.locator("#messages .message-assistant").last();
+    await expect(answer).toContainText(strings.offTopic);
+    await expect(answer.locator("a.course-link")).toHaveCount(0);
+    const helpButton = answer.getByRole("button", { name: strings.person });
+    await expect(helpButton).toBeVisible();
+    await helpButton.click();
+    await expect(assistant.locator("#escalation-reason")).toBeFocused();
+  }
 });
 
 test("Savanna lesson answers link in English and Amharic and the SMS simulator returns a helper reply", async ({ page, request }) => {

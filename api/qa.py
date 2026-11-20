@@ -6,30 +6,14 @@ import importlib
 import os
 
 from .retrieval import retrieve, sensitive_topic
+from .localization import api_message, api_messages
 
-NOT_FOUND = "I could not find this in the course."
-OFF_TOPIC = "I can only help with this course. Would you like a person to help?"
-SENSITIVE_REFUSAL = "I can’t help with medical, legal, or immigration advice. Please talk to a tutor."
-NOT_FOUND_TRANSLATIONS = {
-    "en": NOT_FOUND,
-    "am": "ይህንን በትምህርቱ ውስጥ ማግኘት አልቻልኩም።",
-    "ti": "እዚ ኣብ ትምህርቲ ክረኽቦ ኣይከኣልኩን።",
-    "om": "Barnoota kana keessatti kana hin arganne.",
-    "so": "Casharkan kama helin.",
-    "ar": "لم أجد هذا في الدرس.",
-}
-OFF_TOPIC_TRANSLATIONS = {
-    "en": OFF_TOPIC,
-    "am": "ስለዚህ ትምህርት ብቻ መርዳት እችላለሁ። አንድ ሰው እንዲረዳዎት ይፈልጋሉ?",
-}
-SENSITIVE_REFUSAL_TRANSLATIONS = {
-    "en": SENSITIVE_REFUSAL,
-    "am": "ስለ ሕክምና፣ ሕግ ወይም ኢሚግሬሽን ምክር መስጠት አልችልም። እባክዎ አስተማሪን ያነጋግሩ።",
-    "ti": "ብዛዕባ ሕክምና፡ ሕጊ ወይ ኢሚግሬሽን ምኽሪ ክህብ ኣይክእልን። በጃኻ ምስ መምህር ተዘራረብ።",
-    "om": "Waa'ee fayyaa, seeraa ykn godaansaa gorsa kennuu hin danda'u. Maaloo barsiisaa waliin haasa'i.",
-    "so": "Kama bixin karo talo caafimaad, sharci ama socdaal. Fadlan la hadal macallin.",
-    "ar": "لا أستطيع تقديم نصيحة طبية أو قانونية أو متعلقة بالهجرة. يُرجى التحدث إلى معلّم.",
-}
+NOT_FOUND = api_message("en", "not_found")
+OFF_TOPIC = api_message("en", "off_topic")
+SENSITIVE_REFUSAL = api_message("en", "sensitive_refusal")
+NOT_FOUND_TRANSLATIONS = api_messages("not_found")
+OFF_TOPIC_TRANSLATIONS = api_messages("off_topic")
+SENSITIVE_REFUSAL_TRANSLATIONS = api_messages("sensitive_refusal")
 
 
 def _grounding(score: float, answer: str, sources: list[dict], status: str, mode: str) -> dict:

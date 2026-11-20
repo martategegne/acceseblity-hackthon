@@ -18,7 +18,6 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -38,6 +37,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from .qa import answer_question
+from .localization import api_message
 from .retrieval import retrieve
 from .voice import LANGUAGES as VOICE_LANGUAGES
 from .voice import capabilities as voice_capabilities
@@ -109,25 +109,6 @@ DB_PATH = Path(os.getenv("ESCALATIONS_DB", ROOT / "escalations.sqlite3"))
 
 def offline_mode() -> bool:
     return os.getenv("OFFLINE_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
-
-
-@lru_cache(maxsize=1)
-def _amharic_api_messages() -> dict[str, str]:
-    path = ROOT.parent / "module" / "i18n" / "am.json"
-    try:
-        pack = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        logger.error("Could not load Amharic API messages: %s", error)
-        return {}
-    messages = pack.get("api") if isinstance(pack, dict) else None
-    return messages if isinstance(messages, dict) else {}
-
-
-def api_message(language: str, key: str, default: str) -> str:
-    if language != "am":
-        return default
-    translated = _amharic_api_messages().get(key)
-    return translated if isinstance(translated, str) and translated else default
 
 
 app = FastAPI(
@@ -253,6 +234,20 @@ DEFAULT_COURSE_BASE_URL = "https://github.com/hudahussen2424-hash/acceseblity-ha
 
 
 def get_job_titles(lang: str = "en", limit: int = 3) -> list[str]:
+    try:
+        localized = []
+        for section in indexed_sections():
+            if section.get("type") != "job":
+                continue
+            title = section.get("titles", {}).get(lang)
+            if not title:
+                title = section.get("titles", {}).get("en") or section.get("title")
+            if title:
+                localized.append(str(title))
+            if len(localized) == limit:
+                return localized
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        pass
     if JOBS_FILE.exists():
         try:
             data = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
@@ -332,25 +327,57 @@ def decrypt_sms_phone(ciphertext: str) -> str | None:
         return None
 
 
-def detect_language(text: str) -> str:
+SMS_LANGUAGES = ("en", "am", "ti", "om", "so")
+
+
+def detect_language(text: str, preferred: str | None = None) -> str:
+    """Honor an explicit SMS preference; otherwise infer Amharic from its script."""
+    if preferred in SMS_LANGUAGES:
+        return preferred
     return "am" if ETHIOPIC_RANGE.search(text) else "en"
 
 
-def get_source_short_code(source: dict[str, Any], sections: list[dict[str, Any]]) -> str:
+def get_sms_language(phone_hash: str) -> str | None:
+    if not phone_hash:
+        return None
+    with connect() as db:
+        row = db.execute(
+            "SELECT language FROM sms_language_preferences WHERE phone_hash=?",
+            (phone_hash,),
+        ).fetchone()
+    language = row["language"] if row else None
+    return language if language in SMS_LANGUAGES else None
+
+
+def set_sms_language(phone_hash: str, language: str) -> None:
+    if language not in SMS_LANGUAGES:
+        raise ValueError("Unsupported SMS language")
+    with connect() as db:
+        db.execute(
+            "INSERT INTO sms_language_preferences(phone_hash, language, updated_at) VALUES(?, ?, ?) "
+            "ON CONFLICT(phone_hash) DO UPDATE SET language=excluded.language, updated_at=excluded.updated_at",
+            (phone_hash, language, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def get_source_short_code(
+    source: dict[str, Any], sections: list[dict[str, Any]], language: str = "en"
+) -> str:
     url = str(source.get("url") or "")
     anchor = url.split("#")[-1] if "#" in url else ""
     if anchor in SECTION_SHORT_CODES:
-        return SECTION_SHORT_CODES[anchor]
+        number = re.search(r"s(\d+)$", SECTION_SHORT_CODES[anchor])
+        return f"{api_message(language, 'sms_source_prefix')} s{number.group(1)}" if number else api_message(language, "sms_source_prefix")
 
     match = re.search(r"(?:section|s)[-_]?(\d+)", url, re.IGNORECASE)
     if match:
-        return f"Course s{match.group(1)}"
+        return f"{api_message(language, 'sms_source_prefix')} s{match.group(1)}"
 
     for idx, s in enumerate(sections):
         if s.get("url") == url or s.get("id") == anchor:
-            return f"Course s{idx + 1}"
+            return f"{api_message(language, 'sms_source_prefix')} s{idx + 1}"
 
-    return "Course s1"
+    return f"{api_message(language, 'sms_source_prefix')} s1"
 
 
 def format_sms_message(
@@ -548,6 +575,11 @@ def initialize() -> None:
             phone_hash TEXT PRIMARY KEY,
             active INTEGER NOT NULL DEFAULT 1,
             phone_ciphertext TEXT,
+            updated_at TEXT NOT NULL
+        )""")
+        db.execute("""CREATE TABLE IF NOT EXISTS sms_language_preferences (
+            phone_hash TEXT PRIMARY KEY,
+            language TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""")
         sms_columns = {row[1] for row in db.execute("PRAGMA table_info(sms_alerts)")}
@@ -1374,9 +1406,10 @@ async def sync_voice_actions(payload: dict[str, Any]) -> dict[str, Any]:
 async def ask(payload: dict[str, Any]) -> dict[str, Any]:
     question, language = payload.get("question"), payload.get("language", "en")
     if not isinstance(question, str) or not question.strip() or len(question) > 4000:
-        plain_bad("Write a question of 1 to 4000 characters.")
-    if language not in SUPPORTED_LANGUAGES:
-        plain_bad("Language must be en, am, om, ti, so, or ar.")
+        error_language = language if isinstance(language, str) and language in SUPPORTED_LANGUAGES else "en"
+        plain_bad("Write a question of 1 to 4000 characters.", error_language, "error_question")
+    if not isinstance(language, str) or language not in SUPPORTED_LANGUAGES:
+        plain_bad("Language must be en, am, om, ti, so, or ar.", "en", "error_language")
     return await answer_question(
         question.strip(),
         language,
@@ -1456,27 +1489,68 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     try:
         payload = await request.json()
     except Exception:
-        return PlainTextResponse("Send valid JSON with a text message.", status_code=400)
+        return PlainTextResponse(api_message("en", "sms_invalid_json"), status_code=400)
 
     if not isinstance(payload, dict):
-        return PlainTextResponse("Send a JSON object with a text message.", status_code=400)
+        return PlainTextResponse(api_message("en", "sms_invalid_object"), status_code=400)
 
-    raw_text = payload.get("text")
-    if not isinstance(raw_text, str) or not raw_text.strip():
-        return PlainTextResponse("Send a text message.", status_code=400)
-
-    text = raw_text.strip()
     from_number = str(payload.get("from") or "").strip()
     normalized_phone = normalize_ethiopian_phone(from_number)
     stored_phone = normalized_phone or from_number
     phone_hash = hash_phone(stored_phone) if stored_phone else ""
-    lang = detect_language(text)
+    preferred_language = get_sms_language(phone_hash)
+    raw_text = payload.get("text")
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return PlainTextResponse(
+            api_message(preferred_language, "sms_empty_text"), status_code=400
+        )
+
+    text = raw_text.strip()
+    lang = detect_language(text, preferred_language)
     cmd = text.upper()
+
+    if cmd in {"HELP", "?"}:
+        return PlainTextResponse(api_message(lang, "sms_help"), media_type="text/plain")
+
+    if cmd in {"LANG", "LANGUAGE"}:
+        return PlainTextResponse(
+            api_message(lang, "sms_language_instructions"), media_type="text/plain"
+        )
+
+    if cmd in {"LANG RESET", "LANGUAGE RESET"}:
+        if phone_hash:
+            with connect() as db:
+                db.execute(
+                    "DELETE FROM sms_language_preferences WHERE phone_hash=?", (phone_hash,)
+                )
+        return PlainTextResponse(
+            api_message(lang, "sms_language_reset"), media_type="text/plain"
+        )
+
+    language_match = re.fullmatch(r"(?:LANG|LANGUAGE)\s+(EN|AM|TI|OM|SO)", cmd)
+    if language_match:
+        selected_language = language_match.group(1).lower()
+        if not phone_hash:
+            return PlainTextResponse(
+                api_message(selected_language, "sms_language_needs_sender"),
+                media_type="text/plain",
+            )
+        set_sms_language(phone_hash, selected_language)
+        return PlainTextResponse(
+            api_message(selected_language, "sms_language_saved"), media_type="text/plain"
+        )
+
+    if cmd.startswith("LANG ") or cmd.startswith("LANGUAGE "):
+        return PlainTextResponse(
+            api_message(lang, "sms_language_invalid"), media_type="text/plain"
+        )
 
     # Command: PERSON opens an escalation
     if cmd == "PERSON":
         if not phone_hash:
-            return PlainTextResponse("A sender number is needed to check a tutor request.", media_type="text/plain")
+            return PlainTextResponse(
+                api_message(lang, "sms_sender_needed"), media_type="text/plain"
+            )
         ticket_id = save_escalation_record(
             conversation=[{"from": "user", "text": "PERSON"}],
             language=lang,
@@ -1485,11 +1559,7 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
         )
         background.add_task(notify_webhook, ticket_id)
         reference = ticket_id.replace("-", "")[-8:].upper()
-        reply = (
-            "ተመዝግቧል። 23:00 ላይ አስተማሪ ላይኖር ይችላል፤ ምላሽ ዋስትና የለውም።"
-            if lang == "am"
-            else "Request queued. Tutors may be unavailable, including at 23:00; replies are not guaranteed."
-        )
+        reply = api_message(lang, "sms_request_queued")
         reply = format_sms_message(reply, suffix=f"STATUS {reference}")
         return PlainTextResponse(reply, media_type="text/plain")
 
@@ -1497,10 +1567,12 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     status_match = re.fullmatch(r"STATUS(?:\s+([A-F0-9]{8}))?", cmd)
     if status_match:
         if not phone_hash:
-            return PlainTextResponse("Use the same sender number used for the tutor request.", media_type="text/plain")
+            return PlainTextResponse(
+                api_message(lang, "sms_same_sender"), media_type="text/plain"
+            )
         reference = status_match.group(1)
         if not reference:
-            reply = "Reply STATUS and the 8-character code from your tutor-request message."
+            reply = api_message(lang, "sms_status_instructions")
             return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
         with connect() as db:
             purge_expired_tickets(db)
@@ -1509,20 +1581,16 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
                 (f"%{reference.lower()}", f"sms:{phone_hash}"),
             ).fetchall()
         if len(rows) != 1:
-            reply = "No matching request was found. Check the code and use the same sender number."
+            reply = api_message(lang, "sms_no_match")
             return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
         ticket = rows[0]
         if ticket["status"] == "answered":
-            reply = f"Tutor: {ticket['reply'] or ''}"
+            reply = f"{api_message(lang, 'sms_tutor_reply_prefix')}: {ticket['reply'] or ''}"
             return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
         if ticket["reply"]:
-            reply = f"Tutor update: {ticket['reply']}"
+            reply = f"{api_message(lang, 'sms_tutor_update_prefix')}: {ticket['reply']}"
         else:
-            reply = (
-                "እስካሁን መልስ የለም። ጊዜው ይለያያል፤ ዋስትና የለም።"
-                if lang == "am"
-                else "No tutor reply yet. Response times vary and are not guaranteed."
-            )
+            reply = api_message(lang, "sms_no_tutor_reply")
         return PlainTextResponse(
             format_sms_message(reply, suffix=f"STATUS {reference}"),
             media_type="text/plain",
@@ -1531,26 +1599,25 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     # Command: JOBS lists up to 3 job titles
     if cmd == "JOBS":
         job_titles = get_job_titles(lang=lang, limit=3)
-        prefix = "ክፍት የሥራ ቦታዎች: " if lang == "am" else "Jobs: "
-        reply = prefix + " ".join(f"{i+1}. {t}" for i, t in enumerate(job_titles))
+        reply = api_message(lang, "sms_jobs_prefix") + " " + " ".join(
+            f"{i+1}. {t}" for i, t in enumerate(job_titles)
+        )
         return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
 
     # ALERT ON discloses the sender and possible carrier charges before consent.
     if cmd == "ALERT":
         sender = os.getenv("TWILIO_FROM_NUMBER", "").strip()
         if not sms_alert_delivery_configured():
-            reply = "Job alerts are unavailable because the SMS sender is not configured."
-        elif lang == "am":
-            reply = f"ማሳወቂያ ከ{sender}፤ ክፍያ ሊኖር ይችላል። ለመቀጠል ALERT ON ይላኩ።"
+            reply = api_message(lang, "sms_alert_unavailable")
         else:
-            reply = f"Alerts come from {sender}; carrier rates may apply. Reply ALERT ON to continue."
+            reply = api_message(lang, "sms_alert_disclosure", sender=sender)
         return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
 
     if cmd == "ALERT ON":
         if not phone_hash:
-            return PlainTextResponse("A sender number is needed to enable alerts.", media_type="text/plain")
+            return PlainTextResponse(api_message(lang, "sms_alert_sender_needed"), media_type="text/plain")
         if not sms_alert_delivery_configured():
-            return PlainTextResponse("Job alerts are unavailable because the SMS sender is not configured.", media_type="text/plain")
+            return PlainTextResponse(api_message(lang, "sms_alert_unavailable"), media_type="text/plain")
         now_iso = datetime.now(timezone.utc).isoformat()
         with connect() as db:
             db.execute(
@@ -1558,16 +1625,12 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
                 (phone_hash, encrypt_sms_phone(stored_phone), now_iso),
             )
         sender = os.getenv("TWILIO_FROM_NUMBER", "").strip()
-        reply = (
-            f"ማሳወቂያዎች ከ{sender} ይመጣሉ፤ ክፍያ ሊኖር ይችላል። ለመስማማት ALERT YES ይላኩ።"
-            if lang == "am"
-            else f"Alerts come from {sender}; carrier rates may apply. Reply ALERT YES to opt in."
-        )
+        reply = api_message(lang, "sms_alert_confirmation", sender=sender)
         return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
 
     if cmd == "ALERT YES":
         if not phone_hash or not sms_alert_delivery_configured():
-            return PlainTextResponse("Job alerts are unavailable because the SMS sender is not configured.", media_type="text/plain")
+            return PlainTextResponse(api_message(lang, "sms_alert_unavailable"), media_type="text/plain")
         with connect() as db:
             row = db.execute(
                 "SELECT active, updated_at, phone_ciphertext FROM sms_alerts WHERE phone_hash=?",
@@ -1581,18 +1644,14 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
                 except ValueError:
                     pending = False
             if not pending:
-                reply = "Send ALERT ON first to review the sender and cost information."
+                reply = api_message(lang, "sms_alert_first")
             else:
                 db.execute(
                     "UPDATE sms_alerts SET active=1, updated_at=? WHERE phone_hash=?",
                     (datetime.now(timezone.utc).isoformat(), phone_hash),
                 )
                 sender = os.getenv("TWILIO_FROM_NUMBER", "").strip()
-                reply = (
-                    f"ማሳወቂያ በርቷል። ከ{sender}፤ ክፍያ ሊኖር ይችላል። ALERT OFF ያቁሙ።"
-                    if lang == "am"
-                    else f"Job alerts are on from {sender}; carrier rates may apply. Reply ALERT OFF to stop."
-                )
+                reply = api_message(lang, "sms_alert_enabled", sender=sender)
         return PlainTextResponse(format_sms_message(reply), media_type="text/plain")
 
     if cmd == "ALERT OFF":
@@ -1603,7 +1662,7 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
                     "INSERT OR REPLACE INTO sms_alerts(phone_hash, active, phone_ciphertext, updated_at) VALUES(?, ?, ?, ?)",
                     (phone_hash, 0, None, now_iso),
                 )
-        reply = "የሥራ ማሳወቂያ ጠፍቷል።" if lang == "am" else "Job alerts turned off."
+        reply = api_message(lang, "sms_alert_off")
         return PlainTextResponse(reply, media_type="text/plain")
 
     # Normal question: run answer pipeline
@@ -1613,14 +1672,15 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     sources = result.get("sources", [])
 
     source_code = None
-    if sources and answer not in (
-        "I could not find this in the course.",
-        "ይህንን በትምህርቱ ውስጥ ማግኘት አልቻልኩም።",
-        "I can’t help with medical, legal, or immigration advice. Please talk to a tutor."
-    ):
-        source_code = get_source_short_code(sources[0], sections)
+    if result.get("answerStatus") == "answered" and sources:
+        source_code = get_source_short_code(sources[0], sections, lang)
 
-    formatted = format_sms_message(answer, source_code)
+    handoff_suffix = (
+        api_message(lang, "sms_person_instruction")
+        if result.get("answerStatus") in {"not_found", "off_topic", "refused"}
+        else None
+    )
+    formatted = format_sms_message(answer, source_code, suffix=handoff_suffix)
     return PlainTextResponse(formatted, media_type="text/plain")
 
 
@@ -1668,32 +1728,33 @@ def helper_ticket_dict(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, An
 def create_escalation(payload: dict[str, Any], background: BackgroundTasks) -> dict[str, str]:
     conversation = payload.get("conversation", [])
     language, page, note = payload.get("language"), payload.get("page"), payload.get("note", "")
+    error_language = language if isinstance(language, str) and language in SUPPORTED_LANGUAGES else "en"
     if not isinstance(conversation, list) or len(conversation) > 200:
-        plain_bad("Conversation must be a list of up to 200 messages.")
+        plain_bad("Conversation must be a list of up to 200 messages.", error_language, "error_ticket_conversation")
     if any(
         not isinstance(message, dict)
         or not isinstance(message.get("text"), str)
         or len(message["text"]) > 4000
         for message in conversation
     ):
-        plain_bad("Each conversation message needs text.")
-    if language not in SUPPORTED_LANGUAGES:
-        plain_bad("Language must be en, am, om, ti, so, or ar.")
+        plain_bad("Each conversation message needs text.", error_language, "error_ticket_message")
+    if not isinstance(language, str) or language not in SUPPORTED_LANGUAGES:
+        plain_bad("Language must be en, am, om, ti, so, or ar.", "en", "error_language")
     if not isinstance(page, str) or not page or len(page) > 2048:
-        plain_bad("Add the page address.")
+        plain_bad("Add the page address.", language, "error_ticket_page")
     handoff_reason = payload.get("handoffReason")
     if handoff_reason is not None and (
         not isinstance(handoff_reason, str) or handoff_reason not in _HANDOFF_REASONS
     ):
         plain_bad("Handoff reason must be answer_not_found, learner_requested_person, answer_flagged_incorrect, or other.")
     if not isinstance(note, str) or len(note) > 4000:
-        plain_bad("The note must be 4000 characters or fewer.")
+        plain_bad("The note must be 4000 characters or fewer.", language, "error_ticket_note")
     raw_phone = payload.get("phone", "")
     if not isinstance(raw_phone, str):
         plain_bad("Phone number must be written as text.")
     normalized_phone = normalize_ethiopian_phone(raw_phone) if raw_phone.strip() else None
     if raw_phone.strip() and not normalized_phone:
-        plain_bad("Use an Ethiopian mobile number starting with 09, 07, +2519, or +2517.")
+        plain_bad("Use an Ethiopian mobile number starting with 09, 07, +2519, or +2517.", language, "error_ticket_phone")
     audio = payload.get("audio")
     ticket_type = payload.get("type", "person")
     job_id, accommodation = payload.get("jobId"), payload.get("accommodation")

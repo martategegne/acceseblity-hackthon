@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from api import qa
+from api.qa import OFF_TOPIC_TRANSLATIONS, SENSITIVE_REFUSAL_TRANSLATIONS
 from api.main import app, DB_PATH, connect, initialize, save_escalation_record
 
 
@@ -55,32 +56,49 @@ def test_ask_reports_when_course_evidence_is_not_found(client, monkeypatch):
     assert response.json()["sources"] == []
 
 
-def test_ask_reports_off_topic_questions_and_localizes_amharic(client):
-    english = client.post("/api/v1/ask", json={
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
+def test_ask_localizes_not_found_and_never_returns_a_source(client, monkeypatch, language):
+    monkeypatch.setenv("THRESHOLD", "1.01")
+    section = json.loads(
+        (Path(__file__).parents[1] / "demo" / "data" / "content.json").read_text(encoding="utf-8")
+    )[0]
+    locale = json.loads(
+        (Path(__file__).parents[1] / "module" / "i18n" / f"{language}.json").read_text(encoding="utf-8")
+    )
+    response = client.post(
+        "/api/v1/ask",
+        json={"question": section["titles"][language], "language": language},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answerStatus"] == "not_found"
+    assert response.json()["answer"] == locale["api"]["not_found"]
+    assert response.json()["sources"] == []
+
+
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
+def test_ask_reports_localized_off_topic_questions_without_sources(client, language):
+    response = client.post("/api/v1/ask", json={
         "question": "Where can I buy train tickets for Madrid?",
-        "language": "en",
-    })
-    amharic = client.post("/api/v1/ask", json={
-        "question": "Where can I buy train tickets for Madrid?",
-        "language": "am",
+        "language": language,
     })
 
-    assert english.status_code == amharic.status_code == 200
-    assert english.json()["answer"] == "I can only help with this course. Would you like a person to help?"
-    assert english.json()["answerStatus"] == amharic.json()["answerStatus"] == "off_topic"
-    assert amharic.json()["answer"] != english.json()["answer"]
-    assert english.json()["sources"] == amharic.json()["sources"] == []
+    assert response.status_code == 200
+    assert response.json()["answer"] == OFF_TOPIC_TRANSLATIONS[language]
+    assert response.json()["answerStatus"] == "off_topic"
+    assert response.json()["sources"] == []
 
 
-def test_ask_preserves_sensitive_topic_refusal(client):
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
+def test_ask_preserves_localized_sensitive_topic_refusal(client, language):
     response = client.post("/api/v1/ask", json={
         "question": "Can you give me legal advice?",
-        "language": "en",
+        "language": language,
     })
 
     assert response.status_code == 200
     assert response.json()["answerStatus"] == "refused"
-    assert "medical, legal, or immigration advice" in response.json()["answer"]
+    assert response.json()["answer"] == SENSITIVE_REFUSAL_TRANSLATIONS[language]
     assert response.json()["sources"] == []
 
 
@@ -219,7 +237,7 @@ def test_ask_endpoint(client):
     assert bad_lang.status_code == 400
 
 
-@pytest.mark.parametrize("language", ["ti", "om", "so"])
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
 def test_ask_returns_localized_course_answer_and_source_title(client, monkeypatch, language):
     monkeypatch.setenv("AI_PROVIDER", "none")
     seeded = json.loads(
@@ -235,6 +253,22 @@ def test_ask_returns_localized_course_answer_and_source_title(client, monkeypatc
     result = response.json()
     assert section["text"][language] in result["answer"]
     assert result["sources"] == [{"title": section["titles"][language], "url": section["url"], "type": "lesson"}]
+    assert result["answerStatus"] == "answered"
+    assert result["grounding"]["status"] == "verified"
+
+
+@pytest.mark.parametrize("language", ["en", "am", "ti", "om", "so"])
+def test_ask_and_tutor_validation_errors_use_selected_language(client, language):
+    locale = json.loads((Path(__file__).parents[1] / "module" / "i18n" / f"{language}.json").read_text(encoding="utf-8"))
+    invalid_question = client.post("/api/v1/ask", json={"question": "", "language": language})
+    assert invalid_question.status_code == 400
+    assert invalid_question.json()["detail"] == locale["api"]["error_question"]
+
+    invalid_phone = client.post("/api/v1/escalations", json={
+        "conversation": [], "language": language, "page": "/lesson", "phone": "invalid"
+    })
+    assert invalid_phone.status_code == 400
+    assert invalid_phone.json()["detail"] == locale["api"]["error_ticket_phone"]
 
 
 def test_ask_returns_a_job_listing_as_a_cited_source(client, monkeypatch):
