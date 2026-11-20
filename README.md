@@ -76,7 +76,9 @@ With Docker Compose, `/helper` and `/docs` are served by the API on port `8081`,
 
 The root `render.yaml` defines a free Docker web service. Connect the GitHub repository to Render as a Blueprint and deploy the `main` branch. The container binds to Render's `PORT` value (and defaults to `8000` for local runs); `/health/ready` is the readiness check. Render generates `HELPER_TOKEN` for the service. Keep integrations offline for the demo; do not add SMS, Telegram, cloud AI, or webhook credentials to the repository.
 
-The free service stores SQLite data at `/tmp/escalations.sqlite3`, which is ephemeral. Use test data only; tutor tickets may be lost when the instance restarts or is replaced. This Blueprint is for a demo, not live learner data or production use. This checkout does not record a deployed hosted URL or prove that a hosted service is running; the team must deploy it and run the rehearsal checks below.
+The free service stores SQLite data at `/tmp/escalations.sqlite3`, which is ephemeral. Use test data only; tutor tickets may be lost when the instance restarts or is replaced. This Blueprint is for a demo, not live learner data or production use.
+
+The team-shared Render lesson URL observed on 2026-11-20 is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>; `/health/ready` returned `{"status":"ready"}` during the check. English and Amharic course questions returned lesson-linked answers. However, the deployed revision still answers “How do I bake bread?” with “I could not find this in the course” and does not offer the requested course-boundary/human-help response. The updated local code has the fix, but this hosted revision must be updated and rechecked before it is treated as pitch-ready. No hosted human-helper reply or carrier SMS delivery has been verified.
 
 ## Configuration
 
@@ -280,7 +282,7 @@ No inbound SMS provider adapter or public callback is included in this repositor
 
 ## Pitch-day rehearsal runbook
 
-Use demo/test data only. First deploy the Render Blueprint and record the actual team-owned URL; no hosted URL or live deployment has been verified from this checkout.
+Use demo/test data only. The team-shared lesson URL currently observed is <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>. Recheck its readiness and flows after deploying the corrected revision; the hosted version checked on 2026-11-20 still lacked the required off-topic reply.
 
 1. Check `https://YOUR-HOST/health/ready`, `/savanna/pages/concept-with-navigation.html`, `/demo/blank.html`, `/helper`, `/docs`, and `/openapi.json`. Confirm the helper can sign in using the service's server-side `HELPER_TOKEN`.
 2. On the Savanna lesson page, ask an English question about one lesson section (for example, the artificial-intelligence section). Confirm the answer has a source link and that it opens the cited heading.
@@ -359,7 +361,7 @@ Run the module build and test commands from the repo root:
 npm run build:module
 npm run check:module-size
 npm test
-python -m pytest -q
+pytest -q
 npm run test:e2e
 npm run test:axe
 ```
@@ -381,12 +383,14 @@ These checks provide local integration evidence for the project, but they are no
 
 ### Verification record — 2026-11-20
 
-- `npm.cmd run build:module` and `npm.cmd run check:module-size` passed; the generated widget is 21.34 KB gzipped (21,852 bytes).
+- `npm.cmd run build:module` and `npm.cmd run check:module-size` passed; the generated widget is 22.46 KB gzipped (22,994 bytes).
 - `npm.cmd test` passed all 37 JavaScript tests.
-- `python -m pytest` passed all 117 Python tests with one Starlette/httpx deprecation warning.
-- `npx.cmd playwright test` passed all 41 Playwright tests, including five automated axe scenarios and the Savanna English/Amharic plus HTTP SMS-simulation path.
-- `python scripts\export_openapi.py` completed and produced no OpenAPI diff.
-- These are local automated results only. They do not establish a hosted deployment, real SMS delivery, a human helper response, fluent-speaker approval, a co-designer session, real-device assistive-technology testing, or WCAG conformance.
+- `pytest -q` passed all 165 Python tests with one Starlette/httpx deprecation warning. The new `pytest.ini` adds the repository root to the import path so this console command works on Windows.
+- `npm.cmd run test:e2e -- --workers=1` passed all 47 Playwright tests. The Savanna test covers English and Amharic cited answers, off-topic accessible handoff, a widget tutor reply, and the separate HTTP SMS simulator/helper reply.
+- `npm.cmd run test:axe -- --workers=1` passed all five automated axe scenarios with no critical or serious violations.
+- `python scripts\export_openapi.py` added the missing `/api/v1/helper/course-gap-radar` route to `openapi.yaml`; `docker compose config --quiet` passed.
+- Hosted check: `https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html` loaded, `/health/ready` returned `{"status":"ready"}`, and English/Amharic course answers linked to the lesson section. The deployed page still returned “I could not find this in the course” for “How do I bake bread?” without the requested boundary response or person action. The local code is verified; the hosted deployment is not ready until updated and rechecked.
+- These checks do not establish real SMS delivery, a real helper reply, fluent-speaker approval, a co-designer session, real-device assistive-technology testing, actual 200% zoom, or WCAG conformance.
 
 ## Accessibility and privacy notes
 
@@ -422,9 +426,9 @@ The component currently has locale packs for English, Amharic, Tigrinya, Afaan O
 
 ## Performance, costs, and libraries
 
-- **Bundle size:** Built with `npm.cmd run build:module`; measured by `npm.cmd run check:module-size` as **21.34 KB gzipped (21,852 bytes)** on 2026-11-20. This is the generated `module/db-assistant.min.js` bundle.
+- **Bundle size:** Built with `npm.cmd run build:module`; measured by `npm.cmd run check:module-size` as **22.46 KB gzipped (22,994 bytes)** on 2026-11-20. This is the generated `module/db-assistant.min.js` bundle.
 - **Slow 3G:** Measured on 2026-11-16 by `scripts/measure-slow3g.ps1` against `http://localhost:18040/demo/blank.html` using Lighthouse simulated throttling (`400 ms` RTT, `400 Kbps` throughput, `4x` CPU slowdown): observed load **76 ms**, First Contentful Paint **153 ms**, performance score **0.81**. This is a local simulated result, not a deployed-network measurement.
-- **Rough cost for 3,000 learners:** With an institution-provided host, local open-source inference, and external SMS/AI disabled, the software/API subscription cost is approximately **$0 per month**. This excludes the host's hardware, electricity, internet, operations, and any optional paid messaging. No load test or concurrency profile for 3,000 learners has been completed, so infrastructure cost and capacity need a measured deployment profile before launch.
+- **Costs and capacity:** No complete deployment cost has been measured or quoted. Local retrieval can run without a paid AI service, but hosting, hardware, electricity, internet, operations, and optional messaging may cost money. No load test or concurrency profile for 3,000 learners has been completed; do not claim a $0 total cost or capacity for that audience without measured evidence.
 - **Direct runtime dependencies and licenses:** FastAPI (MIT), Uvicorn (BSD-3-Clause), cryptography (Apache-2.0 OR BSD-3-Clause), HTTPX (BSD-3-Clause), and ruamel.yaml (MIT). Browser/test tooling: `@axe-core/playwright` (MPL-2.0), `@playwright/test` (Apache-2.0), and Terser (BSD-2-Clause). The lock files identify exact versions; review transitive package, base-image, and any separately provisioned speech-model licenses before redistribution.
 
 ## Current completion status

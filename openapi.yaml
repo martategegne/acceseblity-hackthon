@@ -254,6 +254,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/helper/course-gap-radar:
+    get:
+      summary: Helper Course Gap Radar
+      description: Return helper-only aggregates; small language/topic groups
+        are suppressed.
+      operationId: helper_course_gap_radar_api_v1_helper_course_gap_radar_get
+      parameters:
+      - name: x-helper-token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Helper-Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Helper Course Gap Radar Api V1 Helper Course Gap
+                  Radar Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/answer-feedback:
     post:
       summary: Create Answer Feedback

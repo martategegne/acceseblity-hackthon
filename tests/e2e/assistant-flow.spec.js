@@ -402,10 +402,11 @@ test("off-topic answers offer a localized accessible tutor handoff in each Track
   }
 });
 
-test("Savanna lesson answers link in English and Amharic and the SMS simulator returns a helper reply", async ({ page, request }) => {
+test("Savanna lesson supports sourced answers, widget tutor follow-up, and separate SMS simulation", async ({ page, request }) => {
   const section = sections[1];
-  const sender = "+251911123456";
+  const sender = "+12025550100";
   const helperHeaders = { "X-Helper-Token": "e2e-helper-token" };
+  let widgetTicketId;
   let smsTicketId;
 
   try {
@@ -428,6 +429,46 @@ test("Savanna lesson answers link in English and Amharic and the SMS simulator r
     await expect(amharicAnswer).toContainText(section.text.am.slice(0, 32));
     await expect(amharicAnswer.locator("a.course-link")).toHaveAttribute("href", section.url);
 
+    await assistant.evaluate((element) => element.setAttribute("lang", "en"));
+    await assistant.locator("#question").fill("How do I bake bread?");
+    await assistant.locator("#send").click();
+    const offTopicAnswer = assistant.locator("#messages .message-assistant").last();
+    await expect(offTopicAnswer).toHaveAttribute("data-answer-status", "off_topic");
+    await expect(offTopicAnswer).toContainText(locales.en.strings.offTopic);
+    await expect(offTopicAnswer.locator("a.course-link")).toHaveCount(0);
+    const personAction = offTopicAnswer.getByRole("button", { name: locales.en.strings.person });
+    await expect(personAction).toBeVisible();
+    await personAction.click();
+    await expect(assistant.locator("#escalation-reason")).toBeFocused();
+    await assistant.locator("#escalation-reason").selectOption("learner_requested_person");
+
+    const widgetTicketIdPromise = assistant.evaluate((element) => new Promise((resolve) => {
+      element.addEventListener("db-assistant:escalated", (event) => resolve(event.detail.ticketId), { once: true });
+    }));
+    const widgetCreateResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/v1/escalations"
+    );
+    await assistant.locator("#send-escalation").click();
+    const widgetCreateResponse = await widgetCreateResponsePromise;
+    expect(widgetCreateResponse.status()).toBe(201);
+    const widgetTicket = await widgetCreateResponse.json();
+    widgetTicketId = widgetTicket.ticketId;
+    expect(await widgetTicketIdPromise).toBe(widgetTicketId);
+    await expect(assistant.locator("#escalation-status")).toContainText(widgetTicketId);
+    await expect(assistant.locator("#check-tutor-reply")).toBeVisible();
+
+    const widgetHelperReply = await request.post(`/api/v1/escalations/${widgetTicketId}/reply`, {
+      headers: helperHeaders,
+      data: { text: "I can help with this course question.", resolve: true }
+    });
+    expect(widgetHelperReply.status()).toBe(200);
+    await assistant.locator("#check-tutor-reply").click();
+    await expect(assistant.locator("#messages .message-assistant").last())
+      .toContainText("I can help with this course question.");
+    await expect(assistant.locator("#check-tutor-reply")).toBeHidden();
+
+    // SMS creates a separate ticket and is exercised only through the HTTP simulator.
     const inboxBefore = await request.get("/api/v1/escalations", { headers: helperHeaders });
     expect(inboxBefore.status()).toBe(200);
     const existingIds = new Set((await inboxBefore.json()).map((ticket) => ticket.ticketId));
@@ -458,6 +499,9 @@ test("Savanna lesson answers link in English and Amharic and the SMS simulator r
     await expect(status).toBeOK();
     expect(await status.text()).toContain("Please review the lesson source.");
   } finally {
+    if (widgetTicketId) {
+      await request.delete(`/api/v1/escalations/${widgetTicketId}`, { headers: helperHeaders });
+    }
     if (smsTicketId) {
       await request.delete(`/api/v1/escalations/${smsTicketId}`, { headers: helperHeaders });
     }

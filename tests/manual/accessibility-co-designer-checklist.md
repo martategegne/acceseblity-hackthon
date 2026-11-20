@@ -2,7 +2,60 @@
 
 **Human gate status (2026-11-15): NOT RUN.** No co-designer, keyboard-only, NVDA/TalkBack, sound-off, or real 200% zoom results are recorded. The automated evidence below is not a substitute and does not establish WCAG 2.2 AA conformance.
 
-Use `https://` or `http://localhost` and test both the blank demo and a Savanna page. Open the chat before starting each chat-specific check. Mark each item **Pass** or **Fail** and note the browser, phone, screen reader, and viewport.
+## Pitch-day co-designer task card
+
+Use the hosted HTTPS Savanna lesson page, not localhost:
+`https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html`
+
+Use synthetic questions and test identifiers only. Arrange for a human helper to be available for the reply step. Do not put helper tokens, private contact details, or learner information in notes, screenshots, or recordings. Explain the tasks before starting, then let the co-designer use the product without coaching. If they ask for help, provide it and record the step and wording.
+
+### Record before starting
+
+- Session date and time (include timezone):
+- Co-designer identifier (consented identifier only):
+- Consent to take notes:
+- Recording choice and consent (none / screen / audio / other):
+- Device make/model:
+- Operating system and version:
+- Browser and version:
+- Screen reader and version (or “not used”):
+- Viewport in CSS pixels:
+- Actual browser zoom percentage:
+- Sound off / device muted?:
+- Hosted demo URL:
+- Helper available to reply?:
+- Channel to be demonstrated (widget reply / HTTP SMS simulator / real SMS):
+- If SMS simulator: synthetic sender label (not a real phone number):
+
+### Read these tasks to the co-designer
+
+1. **Keyboard-only, one minute:** Use only the keyboard to reach and open the assistant, ask a lesson question, follow its citation, return to the assistant, and request a person. Record whether focus stayed visible and whether the request could be submitted.
+2. **English source:** Ask a question about a real Savanna lesson section. Ask whether the answer is understandable, where it came from, and whether the citation opens the right section.
+3. **Amharic source:** Switch to Amharic and ask the equivalent question. Record the co-designer’s experience of the answer and source; the presence of Amharic text is not proof of translation quality.
+4. **Off-topic handoff:** Ask, “How do I bake bread?” Check that the assistant says it can only help with this course and offers a person. Try the handoff; record every step and barrier.
+5. **Helper reply:** Have the helper reply. Ask the co-designer to find and understand the reply through the actual channel being demonstrated.
+6. **Access conditions:** Repeat the main task with sound off, at actual 200% browser zoom, and with NVDA or TalkBack where available. Record each condition separately. A narrow viewport is not a substitute for actual zoom.
+
+If using the HTTP SMS simulator, say that it simulates an HTTP provider callback and is not a phone SMS. Claim real SMS only after a real device and configured provider have delivered and received the test message; record that evidence separately. A missing helper response is not a completed reply task.
+
+### Observer record
+
+For each task, choose one outcome: **completed independently / completed with help / not completed**.
+
+| Task / condition | Outcome | Steps where the co-designer hesitated or needed help | Exact barriers and comments (co-designer’s words) | Follow-up fix and owner | Retest result |
+|---|---|---|---|---|---|
+| One-minute keyboard task |  |  |  |  |  |
+| English answer and citation |  |  |  |  |  |
+| Amharic answer and citation |  |  |  |  |  |
+| Off-topic response and handoff |  |  |  |  |  |
+| Helper reply through demonstrated channel |  |  |  |  |  |
+| Sound off |  |  |  |  |  |
+| Actual 200% browser zoom |  |  |  |  |  |
+| NVDA or TalkBack (if available) |  |  |  |  |  |
+
+Do not fill in a result for a task that was not run. Keep accessibility criteria at Partly or Does not until observations support a change. Do not mark the gate complete or claim WCAG conformance based on this session alone.
+
+The longer keyboard, screen-reader, zoom, sound-off, and device checklists below are supplementary; automated checks remain separate evidence.
 
 ## Manual run record (copy once per co-designer run)
 
