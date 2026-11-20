@@ -88,7 +88,7 @@ The root [render.yaml](./render.yaml) defines a Docker deployment for Render. Th
 
 Hosted demo page: <https://savanna-assistant-demo.onrender.com/savanna/pages/concept-with-navigation.html>
 
-Recheck the hosted revision after deploying the latest local changes before presenting it as final demo evidence.
+A direct hosted check on 2026-11-20 found `/health/ready` ready; English and Amharic lesson questions cited the same lesson section; “How do I bake bread?” returned “I can only help with this course. Would you like a person to help?” without a course citation; and “Talk to a person” opened the handoff form. No ticket was submitted. The host did not expose its deployed commit ID.
 
 ## Configuration
 
@@ -147,7 +147,7 @@ Key capabilities include:
 - `GET/POST /api/v1/voice/...` — localized voice guidance and offline actions.
 - `/sms/inbound` — JSON SMS simulator for demo flows.
 
-Only answers supported by indexed evidence include source links. Unmatched or off-topic questions remain unverified and offer a **Talk to a person** path.
+Only answers supported by indexed evidence include source links. The API distinguishes evidenced answers, in-scope questions not found in the course, off-topic questions, and sensitive-topic refusals. Unsupported answers do not receive fabricated citations. The tested off-topic response explains the course boundary and offers an accessible **Talk to a person** action. `/sms/inbound` is an HTTP simulator; it does not deliver carrier SMS.
 
 ## Development and testing
 
@@ -161,4 +161,21 @@ npm run test:axe
 ```
 
 The generated browser bundle is [module/db-assistant.min.js](./module/db-assistant.min.js). Test commands require the development dependencies listed in [package.json](./package.json) and [api/requirements-dev.txt](./api/requirements-dev.txt).
+
+### Verification record — 2026-11-20
+
+- `npm.cmd test`: 37 passed.
+- `pytest -q`: 165 passed, with one Starlette/httpx deprecation warning.
+- `npm.cmd run build:module` and `npm.cmd run check:module-size`: passed; the generated bundle is 22,994 bytes gzipped.
+- `npm.cmd run test:e2e -- --workers=1`: 47 passed, including sourced English and Amharic answers, off-topic handoff, a widget tutor reply, and the separate HTTP SMS simulator flow.
+- `npm.cmd run test:axe -- --workers=1`: 5 passed.
+- `docker compose config --quiet`: passed. `git ls-files` found no tracked pytest caches or temporary outputs; ignored local caches were left untouched.
+- The hosted SMS simulator returned instructions for a synthetic `HELP` request. No SMS-created ticket, human reply, or carrier SMS was tested.
+- The co-designer reports checking English and Amharic lesson answers, the off-topic response, and opening the handoff form. No ticket or tutor reply was checked. Session date, original-session consent, tested revision, task independence, barriers, and accessibility conditions remain unknown or unverified. See [CONFORMANCE.md](./CONFORMANCE.md) and the [manual checklist](./tests/manual/accessibility-co-designer-checklist.md) for the record.
+
+These results are local automated checks and reported observations, not a complete hosted helper rehearsal or accessibility sign-off.
+
+## Accessibility and privacy
+
+The co-designer accessibility gate is **NOT VERIFIED**. Keyboard-only, screen-reader, sound-off, and actual 200% zoom results remain unverified, and one co-designer report is not a WCAG conformance assessment. Fluent-speaker review of the non-English locales also remains outstanding. The SMS endpoint is a simulator, not a real two-way SMS service. Review [CONFORMANCE.md](./CONFORMANCE.md) before making accessibility claims.
 
