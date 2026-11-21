@@ -28,12 +28,12 @@ Counts were read from the checked-in locale, course, and job data on 2026-11-20.
 
 ## Fluent-speaker sign-off
 
-For each language, review widget controls and errors, course answers and source labels, job titles/details, off-topic handoff wording, SMS command/status messages, API responses, tutor messages, voice instructions, and screen-reader pronunciation/announcements. Record human, device, and assistive-technology results separately; automated tests verify application behavior and key coverage, not translation quality or accessibility conformance.
+For each language, review widget controls anjkd errors, course answers and source labels, job titles/details, off-topic handoff wording, SMS command/status messages, API responses, tutor messages, voice instructions, and screen-reader pronunciation/announcements. Record human, device, and assistive-technology results separately; automated tests verify application behavior and key coverage, not translation quality or accessibility conformance.
 
 | Language | Fluent reviewer (consented name/identifier) | Review date | Areas reviewed | Corrections applied | Approved for claim? |
 |---|---|---|---|---|---|
 | English |  |  |  |  |  |
-| Amharic |  |  |  |  |  |
+| Amharic |  |  |  i|  |  |
 | Tigrinya |  |  |  |  |  |
 | Afaan Oromo |  |  |  |  |  |
 | Somali |  |  |  |  |  |
