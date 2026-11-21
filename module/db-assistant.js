@@ -42,7 +42,7 @@
 
   class DbAssistant extends HTMLElement {
     static get observedAttributes() {
-      return ["lang", "api", "content", "theme", "debug"];
+      return ["lang", "api", "content", "theme", "debug", "contrast", "text-scale"];
     }
 
     constructor() {
@@ -66,6 +66,7 @@
       this._voiceActionQueue = [];
       this._voiceBlob = null;
       this._voiceObjectUrl = "";
+      this._voiceCaptionsUrl = "";
       this._ignoreRecognitionEnd = false;
       this._voiceGeneration = 0;
       this._screenStream = null;
@@ -83,6 +84,12 @@
       this._flushingQuestionQueue = false;
       this._hostAnswerWaiters = new Map();
       this._hostAnswerHandler = (event) => this._handleHostAnswer(event);
+      this._textScale = 1;
+      this._contrastMode = false;
+      this._accessibilityReady = false;
+      this._focusBeforeOpen = null;
+      this._announcementToken = 0;
+      this._speechStatusNode = null;
       this._rememberPageFocus = (event) => {
         const target = event.composedPath?.()[0] || event.target;
         if (!this.shadowRoot?.contains(target)) this._lastPageFocusedElement = target;
@@ -99,6 +106,8 @@
       this._storageKey = `db-assistant:${location.pathname}:${this.id || "default"}`;
       this._queueKey = `${this._storageKey}:offline-questions`;
       this._studyPackKey = `${this._storageKey}:study-pack`;
+      this._accessibilityKey = `${this._storageKey}:accessibility`;
+      this._restoreAccessibilityPreferences();
       try { this._studyPack = JSON.parse(localStorage.getItem(this._studyPackKey) || "[]"); } catch { this._studyPack = []; }
       if (!Array.isArray(this._studyPack)) this._studyPack = [];
       this._pendingTutorKey = `${this._storageKey}:pending-tutor-ticket`;
@@ -130,11 +139,13 @@
       window.speechSynthesis?.cancel?.();
       window.removeEventListener("online", this._onlineHandler);
       if (this._voiceObjectUrl) URL.revokeObjectURL(this._voiceObjectUrl);
+      if (this._voiceCaptionsUrl) URL.revokeObjectURL(this._voiceCaptionsUrl);
       for (const waiter of this._hostAnswerWaiters.values()) {
         clearTimeout(waiter.timer);
         waiter.resolve(null);
       }
       this._hostAnswerWaiters.clear();
+      this._speechStatusNode = null;
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
@@ -145,6 +156,14 @@
       if (name === "api") {
         this._els.cloudConsent.checked = false;
         this._loadAssistantConfig();
+      }
+      if (name === "contrast") {
+        this._contrastMode = newValue === "high";
+        this._applyAccessibilityPreferences(false);
+      }
+      if (name === "text-scale") {
+        this._textScale = this._normalizeTextScale(newValue);
+        this._applyAccessibilityPreferences(false);
       }
     }
 
@@ -380,6 +399,7 @@
         display: block;
         color: var(--assistant-foreground, var(--guide-ink));
             font: 15px/1.55 var(--bs-body-font-family, "Segoe UI", "Noto Sans Ethiopic", "Nyala", system-ui, sans-serif);
+        font-size: calc(15px * var(--assistant-text-scale, 1));
         color-scheme: light;
       }
       :host([lang="am"]), :host([lang="ti"]) { line-height: 1.75; }
@@ -396,6 +416,53 @@
         --assistant-focus: #ffd8a8;
         color-scheme: dark;
       }
+      :host([contrast="high"]) {
+        --guide-paper: #000 !important;
+        --guide-surface: #000 !important;
+        --guide-ink: #fff !important;
+        --guide-muted: #fff !important;
+        --guide-line: #fff !important;
+        --guide-wash: #000 !important;
+        --guide-accent: #ffff00 !important;
+        --guide-accent-soft: #000 !important;
+        --assistant-primary: #000 !important;
+        --assistant-primary-contrast: #fff !important;
+        --assistant-foreground: #fff !important;
+        --assistant-focus: #00ffff !important;
+        --guide-shadow: none !important;
+        color-scheme: dark;
+      }
+      :host([contrast="high"]) .panel,
+      :host([contrast="high"]) .message,
+      :host([contrast="high"]) .study-card,
+      :host([contrast="high"]) .offline-queue,
+      :host([contrast="high"]) .study-pack,
+      :host([contrast="high"]) .screen-share,
+      :host([contrast="high"]) .ask-card { box-shadow: none; }
+      :host([contrast="high"]) button,
+      :host([contrast="high"]) textarea,
+      :host([contrast="high"]) select,
+      :host([contrast="high"]) input,
+      :host([contrast="high"]) .panel,
+      :host([contrast="high"]) .message,
+      :host([contrast="high"]) .course-link { border-width: 2px; border-color: #fff !important; }
+      :host([contrast="high"]) button,
+      :host([contrast="high"]) textarea,
+      :host([contrast="high"]) select,
+      :host([contrast="high"]) input { background: #000 !important; color: #fff !important; }
+      :host([contrast="high"]) button,
+      :host([contrast="high"]) textarea,
+      :host([contrast="high"]) select,
+      :host([contrast="high"]) input { background-color: #000 !important; color: #fff !important; }
+      :host([contrast="high"]) .launcher,
+      :host([contrast="high"]) #send,
+      :host([contrast="high"]) .person,
+      :host([contrast="high"]) .person-action { background: #000 !important; color: #fff !important; border-color: #ffff00 !important; }
+      :host([contrast="high"]) .course-link { color: #ffff00 !important; }
+      :host([contrast="high"]) #greeting,
+      :host([contrast="high"]) .lesson-explore-description,
+      :host([contrast="high"]) .lesson-explore-fallback,
+      :host([contrast="high"]) .lesson-explore-status { color: #fff !important; }
       *, *::before, *::after { box-sizing: border-box; }
       button, input, textarea, select { font: inherit; letter-spacing: normal; text-transform: none; }
           button { min-width: 44px; min-height: 44px; padding: 9px 13px; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
@@ -412,6 +479,12 @@
           .header { position: sticky; inset-block-start: -16px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -16px -16px 0; padding: 16px 16px 13px; border-block-end: 1px solid var(--guide-line); background: color-mix(in srgb, var(--guide-paper) 94%, transparent); backdrop-filter: blur(12px); }
           .header-title { min-width: 0; }
           .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+          .accessibility-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+          .accessibility-controls button { min-width: 40px; min-height: 40px; padding: 7px 9px; }
+          .text-size-controls { display: flex; align-items: center; gap: 4px; }
+          .text-size-controls button { font-weight: 750; }
+          .accessibility-label { margin: 0; color: var(--guide-muted); font-size: .78em; font-weight: 700; }
+          .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
           .assistant-toolbar { display: grid; gap: 8px; }
           .conversation-region { display: grid; gap: 12px; min-width: 0; }
           .ask-card { position: relative; display: grid; gap: 12px; padding: 15px; border: 1px solid var(--guide-line); border-inline-start: 4px solid var(--assistant-primary, #245c3b); border-radius: 16px; background: var(--guide-surface); box-shadow: 0 4px 14px rgba(20, 46, 31, .05); }
@@ -496,6 +569,10 @@
       .voice-status { min-height: 1.5em; margin: 0; }
       .voice-status:empty { display: none; }
       .voice-note audio { display: block; width: 100%; margin-block: 8px; }
+      .voice-transcript { display: grid; gap: 5px; margin-block-start: 8px; padding: 9px 11px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 10px; background: var(--guide-wash); }
+      .voice-transcript[hidden] { display: none; }
+      .voice-transcript strong { font-size: .86em; }
+      .voice-transcript p { white-space: pre-wrap; }
           .escalation { display: flex; flex-direction: column; gap: 11px; margin: 0; padding: 15px; border: 1px solid var(--guide-line); border-inline-start: 4px solid var(--guide-accent); border-radius: 16px; background: var(--guide-surface); box-shadow: 0 4px 14px rgba(22, 43, 30, .04); }
       .escalation[hidden], [hidden] { display: none !important; }
       .consent { display: flex; align-items: flex-start; gap: 10px; }
@@ -540,6 +617,8 @@
             .header { flex-wrap: wrap; gap: 10px; margin-inline: -11px; padding-inline: 11px; }
             .header-title { flex: 1 1 100%; }
             .header-actions { width: 100%; justify-content: flex-end; }
+            .header-actions { flex-wrap: wrap; }
+            .accessibility-controls { order: 3; width: 100%; justify-content: flex-end; }
             .message { padding: 10px; }
             .message { max-width: 94%; }
             .composer-actions #send { width: 100%; }
@@ -550,15 +629,26 @@
           @media (forced-colors: active) { button, textarea, select, input, .panel, .message, .offline-queue, .study-pack, .screen-share { border: 2px solid CanvasText; } .person, #send, .person-action, .launcher { background: ButtonFace; color: ButtonText; } .course-link { color: LinkText; } }
         </style>
         <button type="button" class="launcher" id="launcher" disabled aria-haspopup="dialog" aria-controls="panel" aria-expanded="false"></button>
-        <section class="panel" id="panel" role="dialog" aria-labelledby="panel-title" aria-modal="false" hidden>
+        <section class="panel" id="panel" role="dialog" aria-labelledby="panel-title" aria-describedby="panel-instructions" aria-modal="true" hidden>
           <div class="panel-inner">
             <header class="header">
               <div class="header-title"><h2 id="panel-title" tabindex="-1"></h2></div>
               <div class="header-actions">
                 <button type="button" class="person" id="person"></button>
+                <div class="accessibility-controls" role="group" aria-labelledby="accessibility-label">
+                  <span class="accessibility-label sr-only" id="accessibility-label"></span>
+                  <button type="button" class="secondary" id="contrast-toggle" aria-pressed="false"></button>
+                  <div class="text-size-controls" role="group" aria-labelledby="text-size-label">
+                    <span class="accessibility-label sr-only" id="text-size-label"></span>
+                    <button type="button" class="secondary" id="text-decrease"></button>
+                    <button type="button" class="secondary" id="text-reset"></button>
+                    <button type="button" class="secondary" id="text-increase"></button>
+                  </div>
+                </div>
                 <button type="button" class="secondary" id="close"></button>
               </div>
             </header>
+            <p id="panel-instructions" class="sr-only"></p>
             <div class="assistant-toolbar">
               <div class="language">
                 <label class="language-label" id="language-label" for="language-select"></label>
@@ -602,7 +692,8 @@
             <section class="ask-card" aria-label="Ask about this lesson">
             <form id="form" novalidate>
               <div class="field"><label id="question-label" for="question"></label>
-                <textarea id="question" name="question" dir="auto" autocomplete="off" aria-required="true"></textarea>
+              <textarea id="question" name="question" dir="auto" autocomplete="off" aria-required="true" aria-describedby="question-help"></textarea>
+                <p id="question-help" class="sr-only"></p>
                 <p id="question-error" class="error" role="alert" dir="auto"></p></div>
               <label class="consent" id="cloud-consent-row" for="cloud-consent" hidden>
                 <input id="cloud-consent" type="checkbox"><span id="cloud-consent-label"></span>
@@ -619,7 +710,11 @@
               </div>
               <p id="voice-help" role="note"></p>
               <p id="voice-status" class="voice-status" role="status" aria-live="polite" aria-atomic="true"></p>
-              <div class="voice-note" id="voice-note" hidden><strong id="voice-note-label"></strong><audio id="voice-player" aria-labelledby="voice-note-label" controls></audio></div>
+              <div class="voice-note" id="voice-note" hidden><strong id="voice-note-label"></strong><audio id="voice-player" aria-labelledby="voice-note-label" aria-describedby="voice-transcript-text" controls><track id="voice-captions" kind="captions" default></audio></div>
+              <div class="voice-transcript" id="voice-transcript" role="region" aria-labelledby="voice-transcript-label" hidden>
+                <strong id="voice-transcript-label"></strong>
+                <p id="voice-transcript-text" dir="auto" aria-live="polite"></p>
+              </div>
             </form>
             </section>
             <button type="button" class="secondary accommodation-open" id="accommodation-open"></button>
@@ -684,6 +779,13 @@
           <span id="screen-share-bar-text"></span>
           <button type="button" id="screen-share-stop"></button>
         </div>`;
+      const announcer = document.createElement("p");
+      announcer.id = "assistant-announcer";
+      announcer.className = "sr-only";
+      announcer.setAttribute("role", "status");
+      announcer.setAttribute("aria-live", "polite");
+      announcer.setAttribute("aria-atomic", "true");
+      this.shadowRoot.append(announcer);
       const isAndroidChrome = typeof navigator !== "undefined" &&
         /Android/i.test(navigator.userAgent) && /Chrome|Chromium/i.test(navigator.userAgent);
       const screenCaptureAvailable = !isAndroidChrome && typeof navigator !== "undefined" &&
@@ -695,6 +797,9 @@
         title: $("panel-title"),
         close: $("close"),
         person: $("person"),
+        contrastToggle: $("contrast-toggle"), textDecrease: $("text-decrease"), textReset: $("text-reset"), textIncrease: $("text-increase"),
+        panelInstructions: $("panel-instructions"), accessibilityLabel: $("accessibility-label"), textSizeLabel: $("text-size-label"),
+        questionHelp: $("question-help"), announcer,
         accommodationOpen: $("accommodation-open"),
         languageLabel: $("language-label"),
         languageSelect: $("language-select"),
@@ -722,7 +827,7 @@
         cloudConsentLabel: $("cloud-consent-label"),
         send: $("send"), microphone: $("microphone"), voiceCommand: $("voice-command"), voiceGuide: $("voice-guide"), stopVoice: $("stop-voice"), readBack: $("read-back"),
         voiceStatus: $("voice-status"), voiceNote: $("voice-note"), voiceNoteLabel: $("voice-note-label"), voicePlayer: $("voice-player"),
-        voiceHelp: $("voice-help"),
+        voiceHelp: $("voice-help"), voiceTranscript: $("voice-transcript"), voiceTranscriptLabel: $("voice-transcript-label"), voiceTranscriptText: $("voice-transcript-text"), voiceCaptions: $("voice-captions"),
         escalation: $("escalation"), escalationNoteLabel: $("escalation-note-label"), escalationNote: $("escalation-note"),
         escalationReasonLabel: $("escalation-reason-label"), escalationReason: $("escalation-reason"),
         escalationReasonError: $("escalation-reason-error"), escalationOtherError: $("escalation-other-error"),
@@ -752,6 +857,7 @@
       this._els.screenScreenshotLabel.hidden = screenCaptureAvailable;
       this._els.screenScreenshot.hidden = screenCaptureAvailable;
       this._applyTheme();
+      this._applyAccessibilityPreferences(false);
       this._renderMessages();
     }
 
@@ -768,10 +874,97 @@
       this.style.setProperty("--assistant-primary-contrast", values[4]);
     }
 
+    _normalizeTextScale(value) {
+      const scale = Number.parseFloat(value);
+      if (!Number.isFinite(scale)) return 1;
+      return Math.min(1.35, Math.max(.9, Number(scale.toFixed(2))));
+    }
+
+    _restoreAccessibilityPreferences() {
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(this._accessibilityKey) || "null"); } catch { /* Use defaults when storage is unavailable. */ }
+      this._textScale = this._normalizeTextScale(saved?.textScale ?? this.getAttribute("text-scale") ?? 1);
+      this._contrastMode = saved?.contrast === "high" || this.getAttribute("contrast") === "high";
+    }
+
+    _persistAccessibilityPreferences() {
+      try {
+        localStorage.setItem(this._accessibilityKey, JSON.stringify({ textScale: this._textScale, contrast: this._contrastMode ? "high" : "normal" }));
+      } catch { /* Preferences remain active for this page when storage is unavailable. */ }
+    }
+
+    _applyAccessibilityPreferences(announce = false) {
+      if (!this._els) return;
+      this.style.setProperty("--assistant-text-scale", String(this._textScale));
+      if (this._contrastMode) this.setAttribute("contrast", "high");
+      else if (this.getAttribute("contrast") === "high") this.removeAttribute("contrast");
+      this.setAttribute("text-scale", String(this._textScale));
+      this._els.contrastToggle.setAttribute("aria-pressed", String(this._contrastMode));
+      this._els.contrastToggle.setAttribute("aria-label", this._contrastMode
+        ? (this._pack?.strings.highContrastOn || en.strings.highContrastOn)
+        : (this._pack?.strings.highContrast || en.strings.highContrast));
+      this._els.contrastToggle.textContent = this._contrastMode
+        ? (this._pack?.strings.highContrastOn || en.strings.highContrastOn)
+        : (this._pack?.strings.highContrast || en.strings.highContrast);
+      this._els.textDecrease.disabled = this._textScale <= .9;
+      this._els.textIncrease.disabled = this._textScale >= 1.35;
+      this._els.textReset.disabled = this._textScale === 1;
+      if (announce) {
+        const sizeKey = this._textScale < 1 ? "textSizeSmaller" : this._textScale > 1 ? "textSizeLarger" : "textSizeDefault";
+        const sizeText = this._pack?.strings[sizeKey] || en.strings[sizeKey];
+        const contrastText = this._contrastMode
+          ? (this._pack?.strings.highContrastOn || en.strings.highContrastOn)
+          : (this._pack?.strings.highContrastOff || en.strings.highContrastOff);
+        this._announce(`${sizeText}. ${contrastText}`);
+      }
+    }
+
+    _setTextScale(value) {
+      const next = this._normalizeTextScale(value);
+      if (next === this._textScale) return;
+      this._textScale = next;
+      this._persistAccessibilityPreferences();
+      this._applyAccessibilityPreferences(true);
+    }
+
+    _setContrastMode(enabled) {
+      const next = Boolean(enabled);
+      if (next === this._contrastMode) return;
+      this._contrastMode = next;
+      this._persistAccessibilityPreferences();
+      this._applyAccessibilityPreferences(true);
+    }
+
+    _announce(text, assertive = false) {
+      if (!this._els?.announcer || !text) return;
+      const token = ++this._announcementToken;
+      this._els.announcer.setAttribute("aria-live", assertive ? "assertive" : "polite");
+      this._els.announcer.textContent = "";
+      window.setTimeout(() => {
+        if (token === this._announcementToken && this._els?.announcer) this._els.announcer.textContent = text;
+      }, 20);
+    }
+
+    _focusablePanelElements() {
+      if (!this._els?.panel || this._els.panel.hidden) return [];
+      const selector = [
+        "button:not([disabled])", "a[href]", "input:not([disabled])", "select:not([disabled])",
+        "textarea:not([disabled])", "summary", "[tabindex]:not([tabindex=\"-1\"])"
+      ].join(",");
+      return [...this._els.panel.querySelectorAll(selector)].filter((element) => {
+        if (element.hidden || element.closest("[hidden]")) return false;
+        return element.getAttribute("aria-hidden") !== "true";
+      });
+    }
+
     _bind() {
       const e = this._els;
       e.launcher.addEventListener("click", () => this._open());
       e.close.addEventListener("click", () => this._close());
+      e.contrastToggle.addEventListener("click", () => this._setContrastMode(!this._contrastMode));
+      e.textDecrease.addEventListener("click", () => this._setTextScale(this._textScale - .1));
+      e.textReset.addEventListener("click", () => this._setTextScale(1));
+      e.textIncrease.addEventListener("click", () => this._setTextScale(this._textScale + .1));
       e.studyPackExport.addEventListener("click", () => this._exportStudyPack());
       e.lessonExploreList.addEventListener("click", (event) => {
         const button = event.target.closest?.("button[data-question]");
@@ -837,9 +1030,27 @@
       e.accommodationForm.addEventListener("submit", (event) => this._submitAccommodation(event));
       e.accommodationJob.addEventListener("change", () => this._populateAccommodationOptions());
       this._escapeHandler = (event) => {
-        if (event.key === "Escape" && !e.panel.hidden) {
+        if (e.panel.hidden) return;
+        if (event.key === "Escape") {
           event.preventDefault();
           this._close();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = this._focusablePanelElements();
+        if (!focusable.length) {
+          event.preventDefault();
+          e.title.focus();
+          return;
+        }
+        const active = this.shadowRoot.activeElement;
+        const activeIndex = focusable.indexOf(active);
+        if (event.shiftKey && (activeIndex <= 0 || activeIndex === -1)) {
+          event.preventDefault();
+          focusable[focusable.length - 1].focus();
+        } else if (!event.shiftKey && (activeIndex === focusable.length - 1 || activeIndex === -1)) {
+          event.preventDefault();
+          focusable[0].focus();
         }
       };
       document.addEventListener("keydown", this._escapeHandler);
@@ -998,6 +1209,9 @@
       this._pendingTutorTicketId = "";
       this._voiceCommandDraft = null;
       this._voiceActionQueue = [];
+      this._textScale = 1;
+      this._contrastMode = false;
+      this._applyAccessibilityPreferences(false);
       try { localStorage.removeItem(this._voiceDraftKey); localStorage.removeItem(this._voiceQueueKey); } catch { /* Existing clear operation removed all assistant keys. */ }
       e.checkTutorReply.hidden = true;
       e.escalationStatus.textContent = this._pack.strings.clearLocalDataDone;
@@ -1198,6 +1412,12 @@
       this._els.log.appendChild(div);
       this._renderStudyPack();
       this._els.log.scrollTop = this._els.log.scrollHeight;
+      if (persist) {
+        const announcement = message.role === "user"
+          ? `${this._pack?.strings.questionSubmitted || en.strings.questionSubmitted}: ${message.text}`
+          : `${authorName}: ${message.text}`;
+        this._announce(announcement);
+      }
 
       if (persist) {
         this._messages.push({
@@ -1345,6 +1565,14 @@
       write(e.title, "dialogTitle");
       write(e.close, "close");
       write(e.person, "person");
+      write(e.accessibilityLabel, "accessibilityOptions");
+      write(e.textSizeLabel, "textSize");
+      e.panelInstructions.textContent = s.panelInstructions || en.strings.panelInstructions;
+      e.panelInstructions.lang = pack.lang;
+      e.contrastToggle.setAttribute("aria-label", s.highContrast || en.strings.highContrast);
+      e.textDecrease.setAttribute("aria-label", s.textSizeSmaller || en.strings.textSizeSmaller);
+      e.textReset.setAttribute("aria-label", s.textSizeDefault || en.strings.textSizeDefault);
+      e.textIncrease.setAttribute("aria-label", s.textSizeLarger || en.strings.textSizeLarger);
       write(e.accommodationOpen, "accommodationButton");
       write(e.languageLabel, "language");
       e.localeStatus.textContent = pack.incomplete ? (s.translationIncomplete || s.translationUnavailable || "") : "";
@@ -1353,6 +1581,8 @@
       write(e.greeting, "greeting");
       if (this._translationUnavailable) e.greeting.textContent += ` ${s.translationUnavailable || en.strings.translationUnavailable}`;
       write(e.label, "questionLabel");
+      e.questionHelp.textContent = s.questionHelp || en.strings.questionHelp;
+      e.questionHelp.lang = pack.lang;
       write(e.cloudConsentLabel, "cloudConsent");
       write(e.send, "ask");
       write(e.microphone, "microphone");
@@ -1367,6 +1597,8 @@
       write(e.stopVoice, "stop");
       write(e.readBack, "readBack");
       write(e.voiceNoteLabel, "voiceNote");
+      write(e.voiceTranscriptLabel, "transcript");
+      e.voiceTranscriptText.lang = pack.lang;
       write(e.escalationReasonLabel, "escalationReasonLabel");
       const reasonOptions = [
         ["", "escalationReasonChoose"],
@@ -1422,14 +1654,17 @@
       this._renderStudyPack();
       this._renderQuestionQueue();
       this._renderLessonSuggestions();
+      this._applyAccessibilityPreferences(false);
       this._emit("ready", { lang: pack.lang, dir: this.dir });
     }
 
     _open() {
       if (!this._pack || !this._els.panel.hidden) return;
+      this._focusBeforeOpen = this.shadowRoot.activeElement || document.activeElement;
       this._els.panel.hidden = false;
       this._els.launcher.setAttribute("aria-expanded", "true");
       this._els.title.focus();
+      this._announce(this._pack.strings.dialogOpened || en.strings.dialogOpened);
       this._emit("open", {});
     }
 
@@ -1437,8 +1672,13 @@
       if (this._els.panel.hidden) return;
       this._els.panel.hidden = true;
       this._els.launcher.setAttribute("aria-expanded", "false");
+      this._announce(this._pack?.strings.dialogClosed || en.strings.dialogClosed);
       this._emit("close", {});
-      this._els.launcher.focus();
+      const returnFocus = this._focusBeforeOpen?.isConnected && this._focusBeforeOpen !== this._els.panel
+        ? this._focusBeforeOpen
+        : this._els.launcher;
+      this._focusBeforeOpen = null;
+      returnFocus.focus?.();
     }
 
     _readQuestionQueue() {
@@ -1940,6 +2180,25 @@
       this._els.microphone.setAttribute("aria-pressed", active && !commandMode ? "true" : "false");
       this._els.voiceCommand.setAttribute("aria-pressed", active && commandMode ? "true" : "false");
       this._els.stopVoice.hidden = !active;
+      this._els.voiceStatus.setAttribute("aria-busy", String(active));
+    }
+
+    _setTranscript(text, visible = true) {
+      const transcript = typeof text === "string" ? text.trim() : "";
+      this._els.voiceTranscriptText.textContent = transcript;
+      this._els.voiceTranscript.hidden = !visible || !transcript;
+      if (this._voiceCaptionsUrl) URL.revokeObjectURL(this._voiceCaptionsUrl);
+      this._voiceCaptionsUrl = "";
+      this._els.voiceCaptions.removeAttribute("src");
+      const unavailable = transcript === (this._pack?.strings.audioTranscriptUnavailable || en.strings.audioTranscriptUnavailable);
+      if (transcript && !unavailable) {
+        const cues = `WEBVTT\n\n00:00.000 --> 59:59.000\n${transcript}\n`;
+        this._voiceCaptionsUrl = URL.createObjectURL(new Blob([cues], { type: "text/vtt" }));
+        this._els.voiceCaptions.src = this._voiceCaptionsUrl;
+        this._els.voiceCaptions.srclang = this._pack?.lang || "en";
+        this._els.voiceCaptions.label = this._pack?.strings.transcript || en.strings.transcript;
+      }
+      if (transcript) this._announce(`${this._pack?.strings.transcript || en.strings.transcript}: ${transcript}`);
     }
 
     _startVoiceCommand() {
@@ -1947,6 +2206,7 @@
         this._stopVoice();
         return;
       }
+      this._setTranscript("", false);
       // Use browser capture and local server transcription for task commands.
       // The Web Speech API may send audio to a browser vendor, so it is reserved
       // for the separate, user-invoked dictation control.
@@ -2018,6 +2278,7 @@
         if (this._els.accommodationChoice.value) payload.accommodation = this._els.accommodationChoice.value;
       }
       if (transcript) {
+        this._setTranscript(transcript);
         this._appendMessage({ role: "user", text: transcript, lang: language });
         this._emit("question", { text: transcript, language, input: "voice", requestId: this._newQuestionQueueId() });
         if (payload.conversation) payload.conversation = payload.conversation.concat({ role: "user", text: transcript.slice(0, 4000) }).slice(-20);
@@ -2112,6 +2373,7 @@
       const strings = this._pack?.strings || en.strings;
       const language = result.language || this._pack?.lang || "en";
       if (!userAlreadyShown && result.transcript) {
+        this._setTranscript(result.transcript);
         this._appendMessage({ role: "user", text: result.transcript, lang: language });
         this._emit("question", { text: result.transcript, language, input: "voice", requestId: this._newQuestionQueueId() });
       }
@@ -2158,6 +2420,7 @@
         this._stopVoice();
         return;
       }
+      this._setTranscript("", false);
       const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!Recognition) {
         this._startVoiceRecorder();
@@ -2177,6 +2440,7 @@
         const transcript = Array.from(event.results || []).map((result) => result[0]?.transcript || "").join(" ").trim();
         if (transcript) {
           this._recognitionGotResult = true;
+          this._setTranscript(transcript);
           this._els.input.value = transcript;
           this._els.input.dispatchEvent(new Event("input", { bubbles: true }));
           this._els.readBack.hidden = false;
@@ -2272,6 +2536,7 @@
             this._voiceObjectUrl = URL.createObjectURL(this._voiceBlob);
             this._els.voicePlayer.src = this._voiceObjectUrl;
             this._els.voiceNote.hidden = false;
+            this._setTranscript(this._pack.strings.audioTranscriptUnavailable || en.strings.audioTranscriptUnavailable);
             this._els.voiceStatus.textContent = this._pack.strings.recordedReady;
           }
         }, { once: true });
@@ -2290,6 +2555,14 @@
     }
 
     _stopVoice() {
+      if (this._speechStatusNode && window.speechSynthesis?.speaking) {
+        window.speechSynthesis.cancel();
+        this._speechStatusNode.textContent = this._pack?.strings.stopped || en.strings.stopped;
+        this._announce(this._speechStatusNode.textContent);
+        this._speechStatusNode = null;
+        if (!this._voiceMode) this._els.stopVoice.hidden = true;
+        return;
+      }
       if (this._voiceMode.endsWith("recognition") && this._recognition) {
         this._ignoreRecognitionEnd = true;
         const recognition = this._recognition;
@@ -2315,6 +2588,7 @@
       const lang = languageTags[language] || languageTags.en;
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
+        this._announce(statusNode.textContent, true);
         return;
       }
       const languageCode = lang.split("-")[0].toLowerCase();
@@ -2322,14 +2596,29 @@
         .find((item) => (item.lang || "").toLowerCase().split("-")[0] === languageCode);
       if (!voice) {
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
+        this._announce(statusNode.textContent, true);
         return;
       }
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = lang;
       utterance.voice = voice;
-      utterance.onerror = () => { statusNode.textContent = this._pack.strings.voiceUnavailable; };
-      statusNode.textContent = "";
+      this._speechStatusNode = statusNode;
+      this._els.stopVoice.hidden = false;
+      utterance.onend = () => {
+        if (this._speechStatusNode !== statusNode) return;
+        statusNode.textContent = this._pack?.strings.speechFinished || en.strings.speechFinished;
+        this._speechStatusNode = null;
+        if (!this._voiceMode) this._els.stopVoice.hidden = true;
+      };
+      utterance.onerror = () => {
+        if (this._speechStatusNode === statusNode) this._speechStatusNode = null;
+        statusNode.textContent = this._pack?.strings.voiceUnavailable || en.strings.voiceUnavailable;
+        this._announce(statusNode.textContent, true);
+        if (!this._voiceMode) this._els.stopVoice.hidden = true;
+      };
+      statusNode.textContent = this._pack?.strings.speechStarted || en.strings.speechStarted;
+      this._announce(statusNode.textContent);
       window.speechSynthesis.speak(utterance);
     }
 
@@ -2750,6 +3039,7 @@
         this._voiceBlob = null;
         e.voiceNote.hidden = true;
         e.voicePlayer.removeAttribute("src");
+        this._setTranscript("", false);
       } catch {
         e.escalationStatus.textContent = this._pack.strings.escalationFailed;
       }
@@ -2802,13 +3092,14 @@
       if (!key || !this._pack) {
         error.textContent = "";
         input.removeAttribute("aria-invalid");
-        input.removeAttribute("aria-describedby");
+        input.setAttribute("aria-describedby", "question-help");
         return;
       }
       error.textContent = this._pack.strings[key] || "";
       error.lang = this._pack.lang;
       input.setAttribute("aria-invalid", "true");
-      input.setAttribute("aria-describedby", "question-error");
+      input.setAttribute("aria-describedby", "question-help question-error");
+      this._announce(error.textContent, true);
     }
 
     _emit(name, detail) {

@@ -1,5 +1,5 @@
 /* Scope-safe, versioned offline cache for the assistant's static sources. */
-const CACHE_NAME = "db-assistant-static-v16";
+const CACHE_NAME = "db-assistant-static-v18";
 const APP_ROOT = new URL("./", self.registration.scope);
 const MODULE_ROOT = new URL("module/", APP_ROOT);
 const STATIC_ASSETS = [
