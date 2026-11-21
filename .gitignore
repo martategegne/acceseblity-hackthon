@@ -6,6 +6,8 @@ api/escalations.sqlite3
 *.sqlite3
 .pytest_cache/
 node_modules/
+/.venv/
+/.tsupgrader/
 tmp/
 .offline-markdown-preview/
 playwright-report/

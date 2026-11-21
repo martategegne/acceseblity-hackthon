@@ -304,6 +304,73 @@ def normalize_ethiopian_phone(phone: str | None) -> str | None:
     return None
 
 
+def twilio_webhooks_enabled() -> bool:
+    return os.getenv("TWILIO_WEBHOOKS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _twilio_request_url(request: Request) -> str:
+    """Rebuild the public callback URL when the app sits behind a proxy."""
+    if request.url.path in {"/voice/answer", "/api/v1/voice/call/answer"}:
+        configured_answer_url = os.getenv("VOICE_CALL_ANSWER_URL", "").strip()
+        if configured_answer_url:
+            parsed_answer = urllib.parse.urlsplit(configured_answer_url)
+            if (
+                parsed_answer.scheme != "https"
+                or not parsed_answer.netloc
+                or parsed_answer.fragment
+                or parsed_answer.username
+                or parsed_answer.password
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail="VOICE_CALL_ANSWER_URL must be an absolute HTTPS URL.",
+                )
+            return configured_answer_url
+
+    public_base = os.getenv("TWILIO_WEBHOOK_BASE_URL", "").strip()
+    if not public_base:
+        raise HTTPException(
+            status_code=503,
+            detail="TWILIO_WEBHOOK_BASE_URL is required for live webhook validation.",
+        )
+
+    parsed = urllib.parse.urlsplit(public_base)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="TWILIO_WEBHOOK_BASE_URL must be an HTTPS origin without a path.",
+        )
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, request.url.path, request.url.query, "")
+    )
+
+
+def _validate_twilio_webhook(request: Request, parameters: Any) -> None:
+    """Validate provider form callbacks when live Twilio webhooks are enabled."""
+    if not twilio_webhooks_enabled():
+        return
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+    if not auth_token:
+        raise HTTPException(status_code=503, detail="TWILIO_AUTH_TOKEN is required for live webhooks.")
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not signature:
+        raise HTTPException(status_code=403, detail="The Twilio signature is missing.")
+    try:
+        from twilio.request_validator import RequestValidator
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Install the Twilio Python helper library to validate webhooks.") from exc
+    if not RequestValidator(auth_token).validate(_twilio_request_url(request), parameters, signature):
+        raise HTTPException(status_code=403, detail="The Twilio signature is invalid.")
+
+
 def sms_cipher():
     key = os.getenv("SMS_ENCRYPTION_KEY", "").strip()
     if not key or Fernet is None:
@@ -1556,7 +1623,24 @@ def _voice_call_say(text: str, language: str) -> str:
 
 
 def _voice_call_gather(language: str, prompt: str) -> str:
-    action = html.escape(os.getenv("VOICE_CALL_ANSWER_URL", "/voice/answer"), quote=True)
+    action_url = os.getenv("VOICE_CALL_ANSWER_URL", "").strip()
+    if action_url:
+        parsed_action = urllib.parse.urlsplit(action_url)
+        if (
+            parsed_action.scheme != "https"
+            or not parsed_action.netloc
+            or parsed_action.fragment
+            or parsed_action.username
+            or parsed_action.password
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="VOICE_CALL_ANSWER_URL must be an absolute HTTPS URL.",
+            )
+    if not action_url:
+        public_base = os.getenv("TWILIO_WEBHOOK_BASE_URL", "").strip().rstrip("/")
+        action_url = f"{public_base}/voice/answer" if public_base else "/voice/answer"
+    action = html.escape(action_url, quote=True)
     return (
         f'<Gather input="speech" action="{action}" method="POST" '
         f'language="{html.escape(_voice_call_locale(language), quote=True)}" speechTimeout="auto">'
@@ -1570,13 +1654,22 @@ def _voice_call_response(body: str) -> Response:
 
 async def _read_voice_call_fields(request: Request) -> dict[str, str]:
     content_type = request.headers.get("content-type", "").lower()
-    raw = await request.body()
+    if content_type.startswith("application/x-www-form-urlencoded") or content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        _validate_twilio_webhook(request, form)
+        return {str(key): str(value) for key, value in form.items()}
     if content_type.startswith("application/json"):
+        if twilio_webhooks_enabled():
+            raise HTTPException(status_code=415, detail="Live Twilio voice callbacks must use form encoding.")
+        raw = await request.body()
         try:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
         except (UnicodeDecodeError, ValueError):
             plain_bad("Send valid voice-call data.")
         return {str(key): str(value) for key, value in payload.items()} if isinstance(payload, dict) else {}
+    if twilio_webhooks_enabled():
+        raise HTTPException(status_code=415, detail="Live Twilio voice callbacks must use form encoding.")
+    raw = await request.body()
     values = urllib.parse.parse_qs(raw.decode("utf-8", errors="replace"), keep_blank_values=True)
     return {key: entries[-1] for key, entries in values.items() if entries}
 
@@ -1597,9 +1690,15 @@ def _save_voice_call_handoff(transcript: str, language: str, caller: str) -> tup
 
 @app.post("/voice/inbound", response_class=Response)
 @app.post("/api/v1/voice/call/inbound", response_class=Response)
-async def voice_call_inbound() -> Response:
-    """Provider-neutral/TwiML-compatible entry point for a spoken Amharic question."""
-    language = _voice_channel_language(os.getenv("VOICE_CALL_LANGUAGE", "am"))
+async def voice_call_inbound(request: Request) -> Response:
+    """Provider-neutral/TwiML-compatible entry point for a spoken course question."""
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("application/x-www-form-urlencoded") or content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        _validate_twilio_webhook(request, form)
+    elif twilio_webhooks_enabled():
+        raise HTTPException(status_code=415, detail="Live Twilio voice callbacks must use form encoding.")
+    language = _voice_channel_language(os.getenv("VOICE_CALL_LANGUAGE", "en"))
     prompt = api_message(language, "voice_call_prompt", "Please ask your course question.")
     return _voice_call_response(_voice_call_gather(language, prompt))
 
@@ -1608,7 +1707,7 @@ async def voice_call_inbound() -> Response:
 @app.post("/api/v1/voice/call/answer", response_class=Response)
 async def voice_call_answer(request: Request) -> Response:
     fields = await _read_voice_call_fields(request)
-    language = _voice_channel_language(fields.get("Language") or fields.get("language"), os.getenv("VOICE_CALL_LANGUAGE", "am"))
+    language = _voice_channel_language(fields.get("Language") or fields.get("language"), os.getenv("VOICE_CALL_LANGUAGE", "en"))
     transcript = fields.get("SpeechResult") or fields.get("speechResult") or fields.get("transcript") or ""
     confidence = fields.get("Confidence") or fields.get("confidence")
     if confidence:
@@ -1941,14 +2040,21 @@ def notify_job(payload: dict[str, Any], x_helper_token: str | None = Header(defa
     return {"telegram": telegram, "sms": sms}
 
 
-@app.post("/sms/inbound", response_class=PlainTextResponse)
-@app.post("/api/v1/sms/inbound", response_class=PlainTextResponse)
-async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTextResponse:
-    try:
-        payload = await request.json()
-    except Exception:
-        return PlainTextResponse(api_message("en", "sms_invalid_json"), status_code=400)
+def _sms_webhook_response(
+    text: str,
+    status_code: int = 200,
+    background: BackgroundTasks | None = None,
+) -> Response:
+    body = html.escape(text, quote=False)
+    return Response(
+        content=f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{body}</Message></Response>',
+        status_code=status_code,
+        media_type="application/xml",
+        background=background,
+    )
 
+
+async def _process_sms_payload(payload: dict[str, Any], background: BackgroundTasks) -> PlainTextResponse:
     if not isinstance(payload, dict):
         return PlainTextResponse(api_message("en", "sms_invalid_object"), status_code=400)
 
@@ -2141,6 +2247,35 @@ async def sms_inbound(request: Request, background: BackgroundTasks) -> PlainTex
     )
     formatted = format_sms_message(answer, source_code, suffix=handoff_suffix)
     return PlainTextResponse(formatted, media_type="text/plain")
+
+
+@app.post("/sms/inbound", response_class=Response)
+@app.post("/api/v1/sms/inbound", response_class=Response)
+async def sms_inbound(request: Request, background: BackgroundTasks) -> Response:
+    content_type = request.headers.get("content-type", "").lower()
+    is_twilio = content_type.startswith("application/x-www-form-urlencoded") or content_type.startswith("multipart/form-data")
+    if is_twilio:
+        form = await request.form()
+        _validate_twilio_webhook(request, form)
+        payload = {"from": form.get("From", ""), "text": form.get("Body", "")}
+    else:
+        # Keep the JSON simulator on the versioned route. The provider-facing
+        # route requires signed form posts once live webhook mode is enabled.
+        if twilio_webhooks_enabled() and request.url.path == "/sms/inbound":
+            raise HTTPException(status_code=415, detail="Live Twilio SMS callbacks must use form encoding.")
+        try:
+            payload = await request.json()
+        except Exception:
+            text = api_message("en", "sms_invalid_json")
+            return PlainTextResponse(text, status_code=400)
+        if not isinstance(payload, dict):
+            text = api_message("en", "sms_invalid_object")
+            return PlainTextResponse(text, status_code=400)
+
+    result = await _process_sms_payload(payload, background)
+    if is_twilio:
+        return _sms_webhook_response(result.body.decode("utf-8"), result.status_code, background)
+    return result
 
 
 def ticket_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -2478,6 +2613,12 @@ def helper_page() -> FileResponse:
 
 @app.get("/", include_in_schema=False)
 def lesson_page() -> FileResponse:
+    return FileResponse(ROOT.parent / "savanna" / "pages" / "concept-with-navigation.html")
+
+
+@app.get("/savanna", include_in_schema=False)
+@app.get("/savanna/", include_in_schema=False)
+def savanna_lesson_page() -> FileResponse:
     return FileResponse(ROOT.parent / "savanna" / "pages" / "concept-with-navigation.html")
 
 

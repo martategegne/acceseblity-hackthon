@@ -218,34 +218,104 @@ paths:
     post:
       summary: Voice Call Inbound
       description: Provider-neutral/TwiML-compatible entry point for a spoken
-        Amharic question.
+        course question. Twilio form callbacks are signature-checked when live
+        webhook mode is enabled; returns TwiML XML.
       operationId: voice_call_inbound_api_v1_voice_call_inbound_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
       responses:
         '200':
           description: Successful Response
+          content:
+            application/xml:
+              schema:
+                type: string
   /voice/inbound:
     post:
       summary: Voice Call Inbound
       description: Provider-neutral/TwiML-compatible entry point for a spoken
-        Amharic question.
+        course question. Twilio form callbacks are signature-checked when live
+        webhook mode is enabled; returns TwiML XML.
       operationId: voice_call_inbound_voice_inbound_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
       responses:
         '200':
           description: Successful Response
+          content:
+            application/xml:
+              schema:
+                type: string
   /api/v1/voice/call/answer:
     post:
       summary: Voice Call Answer
+      description: Process the speech transcript posted by a phone provider and
+        return TwiML XML. In live Twilio webhook mode, send form data and a valid
+        X-Twilio-Signature header.
       operationId: voice_call_answer_api_v1_voice_call_answer_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                SpeechResult:
+                  type: string
+                Confidence:
+                  type: number
+                From:
+                  type: string
+                CallSid:
+                  type: string
+              additionalProperties:
+                type: string
       responses:
         '200':
           description: Successful Response
+          content:
+            application/xml:
+              schema:
+                type: string
   /voice/answer:
     post:
       summary: Voice Call Answer
+      description: Process the speech transcript posted by a phone provider and
+        return TwiML XML. In live Twilio webhook mode, send form data and a valid
+        X-Twilio-Signature header.
       operationId: voice_call_answer_voice_answer_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                SpeechResult:
+                  type: string
+                Confidence:
+                  type: number
+                From:
+                  type: string
+                CallSid:
+                  type: string
+              additionalProperties:
+                type: string
       responses:
         '200':
           description: Successful Response
+          content:
+            application/xml:
+              schema:
+                type: string
   /api/v1/voice/actions/sync:
     post:
       summary: Sync Voice Actions
@@ -480,7 +550,33 @@ paths:
   /api/v1/sms/inbound:
     post:
       summary: Sms Inbound
+      description: JSON simulator for local development; form callbacks return
+        TwiML and require Twilio signatures when live webhook mode is enabled.
       operationId: sms_inbound_api_v1_sms_inbound_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                text:
+                  type: string
+              required:
+              - text
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                From:
+                  type: string
+                Body:
+                  type: string
+              required:
+              - From
+              - Body
       responses:
         '200':
           description: Successful Response
@@ -488,15 +584,47 @@ paths:
             text/plain:
               schema:
                 type: string
+            application/xml:
+              schema:
+                type: string
   /sms/inbound:
     post:
       summary: Sms Inbound
+      description: JSON simulator when live webhooks are disabled; Twilio's
+        signed form callback when live webhook mode is enabled.
       operationId: sms_inbound_sms_inbound_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                text:
+                  type: string
+              required:
+              - text
+              additionalProperties: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                From:
+                  type: string
+                Body:
+                  type: string
+              required:
+              - From
+              - Body
       responses:
         '200':
           description: Successful Response
           content:
             text/plain:
+              schema:
+                type: string
+            application/xml:
               schema:
                 type: string
   /api/v1/escalations:
