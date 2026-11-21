@@ -90,6 +90,23 @@
       this._focusBeforeOpen = null;
       this._announcementToken = 0;
       this._speechStatusNode = null;
+      this._voiceGuideEnabled = false;
+      this._voiceGuideSettings = { rate: 1, volume: 1, voiceName: "" };
+      this._voiceGuideTimer = null;
+      this._voiceGuideFocusTimer = null;
+      this._voiceGuideQueue = [];
+      this._voiceGuideQueueIndex = 0;
+      this._voiceGuideLanguage = "en";
+      this._voiceGuidePinned = false;
+      this._voiceGuideFocusHandler = (event) => {
+        const target = event.composedPath?.()[0] || event.target;
+        if (!this._voiceGuideEnabled || !target || target === this) return;
+        clearTimeout(this._voiceGuideFocusTimer);
+        this._voiceGuideFocusTimer = window.setTimeout(() => {
+          const text = this._describeFocusedControl(target);
+          if (text) this._speakVoiceGuide(text, this._pack?.lang || "en");
+        }, 90);
+      };
       this._rememberPageFocus = (event) => {
         const target = event.composedPath?.()[0] || event.target;
         if (!this.shadowRoot?.contains(target)) this._lastPageFocusedElement = target;
@@ -119,6 +136,7 @@
       this._restorePendingTutorTicket();
       this._restoreLearnerTickets();
       this._bind();
+      this.shadowRoot.addEventListener("focusin", this._voiceGuideFocusHandler);
       this._renderQuestionQueue();
       this._loadAssistantConfig();
       this._registerServiceWorker();
@@ -132,12 +150,15 @@
       this.removeEventListener("db-assistant:answer", this._hostAnswerHandler);
       document.removeEventListener("keydown", this._escapeHandler);
       document.removeEventListener("keydown", this._shortcutHandler);
+      this.shadowRoot?.removeEventListener("focusin", this._voiceGuideFocusHandler);
       this._stopScreenShare(false);
       try { this._recognition?.stop(); } catch { /* Recognition may already be closed. */ }
       try { if (this._mediaRecorder?.state === "recording") this._mediaRecorder.stop(); } catch { /* Recorder may already be closed. */ }
       for (const track of this._mediaStream?.getTracks?.() || []) track.stop();
       this._mediaStream = null;
       window.speechSynthesis?.cancel?.();
+      clearTimeout(this._voiceGuideTimer);
+      clearTimeout(this._voiceGuideFocusTimer);
       window.removeEventListener("online", this._onlineHandler);
       if (this._voiceObjectUrl) URL.revokeObjectURL(this._voiceObjectUrl);
       if (this._voiceCaptionsUrl) URL.revokeObjectURL(this._voiceCaptionsUrl);
@@ -390,7 +411,7 @@
             --guide-paper: #f7faf7;
             --guide-surface: #ffffff;
             --guide-ink: #17352a;
-            --guide-muted: #5c7065;
+            --guide-muted: #4d6255;
             --guide-line: #d8e4dc;
             --guide-wash: #eef5f0;
             --guide-accent: #0f766e;
@@ -482,6 +503,17 @@
           .header-actions { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
           .accessibility-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
           .accessibility-controls button { min-width: 40px; min-height: 40px; padding: 7px 9px; }
+          .voice-guide-control { display: grid; gap: 4px; flex: 1 1 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--guide-line); border-radius: 12px; background: var(--guide-wash); }
+          .voice-guide-control button { justify-self: start; }
+          .voice-guide-state, .voice-guide-helper { margin: 0; color: var(--guide-muted); font-size: .85em; }
+          .voice-guide-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 8px; border: 1px solid var(--guide-line); border-radius: 10px; }
+          .voice-guide-settings label { display: grid; gap: 4px; font-size: .82em; }
+          .voice-guide-settings select, .voice-guide-settings input { min-width: 0; width: 100%; }
+          .voice-caption { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 2px solid var(--guide-ink); border-radius: 12px; background: var(--guide-surface); color: var(--guide-ink); }
+          .voice-caption[hidden] { display: none; }
+          .voice-caption-text { margin: 0; min-height: 1.5em; overflow-wrap: anywhere; }
+          .voice-caption-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+          .voice-caption-actions button { min-height: 38px; }
           .text-size-controls { display: flex; align-items: center; gap: 4px; }
           .text-size-controls button { font-weight: 750; }
           .accessibility-label { margin: 0; color: var(--guide-muted); font-size: .78em; font-weight: 700; }
@@ -636,6 +668,7 @@
             .composer-actions .voice-controls { justify-content: flex-start; }
             .accommodation-open { width: 100%; }
           }
+          @media (max-width: 600px) { .header { position: relative; inset-block-start: auto; backdrop-filter: none; } }
           @media (prefers-reduced-motion: reduce) { :host, :host * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
           @media (forced-colors: active) { button, textarea, select, input, .panel, .message, .offline-queue, .study-pack, .screen-share { border: 2px solid CanvasText; } .person, #send, .person-action, .launcher { background: ButtonFace; color: ButtonText; } .course-link { color: LinkText; } }
         </style>
@@ -646,6 +679,20 @@
               <div class="header-title"><h2 id="panel-title" tabindex="-1"></h2></div>
               <div class="header-actions">
                 <button type="button" class="person" id="person"></button>
+                <div class="voice-guide-control" role="group" aria-labelledby="voice-guide-label">
+                  <span class="accessibility-label sr-only" id="voice-guide-label"></span>
+                  <button type="button" class="secondary" id="voice-guide-toggle" role="switch" aria-checked="false"></button>
+                  <p class="voice-guide-state" id="voice-guide-state"></p>
+                  <p class="voice-guide-helper" id="voice-guide-helper"></p>
+                  <div class="voice-guide-settings" id="voice-guide-settings" hidden>
+                    <label for="voice-guide-rate" id="voice-guide-rate-label"></label>
+                    <input id="voice-guide-rate" type="range" min="0.5" max="2" step="0.1" value="1">
+                    <label for="voice-guide-volume" id="voice-guide-volume-label"></label>
+                    <input id="voice-guide-volume" type="range" min="0" max="1" step="0.1" value="1">
+                    <label for="voice-guide-voice" id="voice-guide-voice-label"></label>
+                    <select id="voice-guide-voice"></select>
+                  </div>
+                </div>
                 <div class="accessibility-controls" role="group" aria-labelledby="accessibility-label">
                   <span class="accessibility-label sr-only" id="accessibility-label"></span>
                   <button type="button" class="secondary" id="contrast-toggle" aria-pressed="false"></button>
@@ -677,6 +724,16 @@
                 <a id="skip-answer" class="skip-link" href="#latest-answer"></a>
                 <a id="jump-sources" class="skip-link" href="#answer-sources"></a>
               </nav>
+            </div>
+            <div class="voice-caption" id="voice-caption" role="region" aria-labelledby="voice-caption-label" aria-live="off" hidden>
+              <strong id="voice-caption-label"></strong>
+              <p class="voice-caption-text" id="voice-caption-text"></p>
+              <div class="voice-caption-actions">
+                <button type="button" class="secondary" id="voice-guide-pause" hidden></button>
+                <button type="button" class="secondary" id="voice-guide-stop"></button>
+                <button type="button" class="secondary" id="voice-caption-pin" aria-pressed="false"></button>
+                <button type="button" class="secondary" id="voice-caption-dismiss"></button>
+              </div>
             </div>
             <section class="conversation-region" aria-label="Conversation">
               <p id="greeting" dir="auto"></p>
@@ -844,6 +901,10 @@
         cloudConsentRow: $("cloud-consent-row"), cloudConsent: $("cloud-consent"),
         cloudConsentLabel: $("cloud-consent-label"),
         send: $("send"), microphone: $("microphone"), voiceCommand: $("voice-command"), voiceGuide: $("voice-guide"), stopVoice: $("stop-voice"), readBack: $("read-back"),
+        voiceGuideLabel: $("voice-guide-label"), voiceGuideToggle: $("voice-guide-toggle"), voiceGuideState: $("voice-guide-state"), voiceGuideHelper: $("voice-guide-helper"), voiceGuideSettings: $("voice-guide-settings"),
+        voiceGuideRate: $("voice-guide-rate"), voiceGuideVolume: $("voice-guide-volume"), voiceGuideVoice: $("voice-guide-voice"),
+        voiceGuideRateLabel: $("voice-guide-rate-label"), voiceGuideVolumeLabel: $("voice-guide-volume-label"), voiceGuideVoiceLabel: $("voice-guide-voice-label"),
+        voiceCaption: $("voice-caption"), voiceCaptionLabel: $("voice-caption-label"), voiceCaptionText: $("voice-caption-text"), voiceGuidePause: $("voice-guide-pause"), voiceGuideStop: $("voice-guide-stop"), voiceCaptionPin: $("voice-caption-pin"), voiceCaptionDismiss: $("voice-caption-dismiss"),
         voiceStatus: $("voice-status"), voiceNote: $("voice-note"), voiceNoteLabel: $("voice-note-label"), voicePlayer: $("voice-player"),
         voiceHelp: $("voice-help"), voiceTranscript: $("voice-transcript"), voiceTranscriptLabel: $("voice-transcript-label"), voiceTranscriptText: $("voice-transcript-text"), voiceCaptions: $("voice-captions"),
         escalation: $("escalation"), escalationNoteLabel: $("escalation-note-label"), escalationNote: $("escalation-note"),
@@ -906,11 +967,24 @@
       try { saved = JSON.parse(localStorage.getItem(this._accessibilityKey) || "null"); } catch { /* Use defaults when storage is unavailable. */ }
       this._textScale = this._normalizeTextScale(saved?.textScale ?? this.getAttribute("text-scale") ?? 1);
       this._contrastMode = saved?.contrast === "high" || this.getAttribute("contrast") === "high";
+      this._voiceGuideEnabled = saved?.voiceGuide === true;
+      this._voiceGuideSettings = {
+        rate: Math.min(2, Math.max(.5, Number(saved?.voiceRate) || 1)),
+        volume: Math.min(1, Math.max(0, Number.isFinite(Number(saved?.voiceVolume)) ? Number(saved.voiceVolume) : 1)),
+        voiceName: typeof saved?.voiceName === "string" ? saved.voiceName : ""
+      };
     }
 
     _persistAccessibilityPreferences() {
       try {
-        localStorage.setItem(this._accessibilityKey, JSON.stringify({ textScale: this._textScale, contrast: this._contrastMode ? "high" : "normal" }));
+        localStorage.setItem(this._accessibilityKey, JSON.stringify({
+          textScale: this._textScale,
+          contrast: this._contrastMode ? "high" : "normal",
+          voiceGuide: this._voiceGuideEnabled,
+          voiceRate: this._voiceGuideSettings.rate,
+          voiceVolume: this._voiceGuideSettings.volume,
+          voiceName: this._voiceGuideSettings.voiceName
+        }));
       } catch { /* Preferences remain active for this page when storage is unavailable. */ }
     }
 
@@ -956,7 +1030,7 @@
       this._applyAccessibilityPreferences(true);
     }
 
-    _announce(text, assertive = false) {
+    _announce(text, assertive = false, speakVoice = true) {
       if (!this._els?.announcer || !text) return;
       const token = ++this._announcementToken;
       // Use one non-interrupting announcement channel.
@@ -965,6 +1039,164 @@
       window.setTimeout(() => {
         if (token === this._announcementToken && this._els?.announcer) this._els.announcer.textContent = text;
       }, 20);
+      if (this._voiceGuideEnabled && speakVoice) this._speakVoiceGuide(text, this._pack?.lang || "en");
+    }
+
+    _caption(text, { pinned = this._voiceGuidePinned } = {}) {
+      const e = this._els;
+      if (!e?.voiceCaption || !text) return;
+      e.voiceCaptionText.textContent = text;
+      e.voiceCaption.lang = this._pack?.lang || "en";
+      e.voiceCaption.dir = this._pack?.dir || "ltr";
+      e.voiceCaption.hidden = false;
+      if (!pinned) {
+        clearTimeout(this._voiceGuideTimer);
+        this._voiceGuideTimer = window.setTimeout(() => {
+          if (!this._voiceGuidePinned && this._els?.voiceCaption) this._els.voiceCaption.hidden = true;
+        }, 7000);
+      }
+    }
+
+    _voiceLanguageTag(language = this._pack?.lang || "en") {
+      return { en: "en-US", am: "am-ET", ti: "ti-ET", om: "om-ET", so: "so-SO", ar: "ar-SA" }[language] || "en-US";
+    }
+
+    _voiceForLanguage(language) {
+      const code = this._voiceLanguageTag(language).split("-")[0].toLowerCase();
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      const preferred = this._voiceGuideSettings.voiceName
+        ? voices.find((voice) => voice.name === this._voiceGuideSettings.voiceName && voice.lang.toLowerCase().startsWith(code))
+        : null;
+      return preferred || voices.find((voice) => voice.lang.toLowerCase().split("-")[0] === code) || null;
+    }
+
+    _voiceMissingText(language) {
+      const strings = this._pack?.strings || en.strings;
+      const names = { en: strings.languageEnglish || "English", am: strings.languageAmharic || "Amharic", ti: strings.languageTigrinya || "Tigrinya", om: strings.languageOromo || "Afaan Oromo", so: strings.languageSomali || "Somali", ar: strings.languageArabic || "Arabic" };
+      return (strings.noVoiceForLanguage || en.strings.noVoiceForLanguage).replace("{language}", names[language] || names.en);
+    }
+
+    _voiceChunks(text) {
+      const clean = String(text || "").replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, "").trim();
+      if (!clean) return [];
+      const sentences = clean.match(/[^.!?。！？]+[.!?。！？]*/g) || [clean];
+      const chunks = [];
+      let current = "";
+      for (const sentence of sentences) {
+        if ((current + " " + sentence).trim().length > 280 && current) {
+          chunks.push(current.trim());
+          current = sentence;
+        } else current = `${current} ${sentence}`;
+      }
+      if (current.trim()) chunks.push(current.trim());
+      return chunks;
+    }
+
+    _speakVoiceGuide(text, language = "en") {
+      if (!this._voiceGuideEnabled || !text) return;
+      this._voiceGuideQueue = this._voiceChunks(text);
+      this._voiceGuideQueueIndex = 0;
+      this._voiceGuideLanguage = language;
+      this._speakNextVoiceGuideChunk();
+    }
+
+    _speakNextVoiceGuideChunk() {
+      if (!this._voiceGuideEnabled || this._voiceGuideQueueIndex >= this._voiceGuideQueue.length) return;
+      const text = this._voiceGuideQueue[this._voiceGuideQueueIndex];
+      const language = this._voiceGuideLanguage;
+      this._caption(text);
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        this._caption(this._voiceMissingText(language));
+        this._announce(this._voiceMissingText(language), false, false);
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const voice = this._voiceForLanguage(language);
+      if (!voice) {
+        const missing = this._voiceMissingText(language);
+        this._caption(missing);
+        this._announce(missing, false, false);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = this._voiceLanguageTag(language);
+      utterance.voice = voice;
+      utterance.rate = this._voiceGuideSettings.rate;
+      utterance.volume = this._voiceGuideSettings.volume;
+      this._els.voiceGuidePause.hidden = false;
+      this._els.voiceGuidePause.textContent = this._pack?.strings.pauseSpeaking || en.strings.pauseSpeaking;
+      utterance.onend = () => {
+        if (!this._voiceGuideEnabled) return;
+        this._voiceGuideQueueIndex += 1;
+        if (this._voiceGuideQueueIndex < this._voiceGuideQueue.length) this._speakNextVoiceGuideChunk();
+        else this._els.voiceGuidePause.hidden = true;
+      };
+      utterance.onerror = () => { this._els.voiceGuidePause.hidden = true; };
+      window.speechSynthesis.speak(utterance);
+    }
+
+    _stopVoiceGuide() {
+      if (!this._voiceGuideEnabled && !window.speechSynthesis?.speaking) return;
+      window.speechSynthesis?.cancel?.();
+      this._voiceGuideQueue = [];
+      this._voiceGuideQueueIndex = 0;
+      if (this._els?.voiceGuidePause) this._els.voiceGuidePause.hidden = true;
+      if (this._els?.voiceCaption && !this._voiceGuidePinned) this._els.voiceCaption.hidden = true;
+    }
+
+    _toggleVoiceGuide(enabled = !this._voiceGuideEnabled) {
+      this._voiceGuideEnabled = Boolean(enabled);
+      this._persistAccessibilityPreferences();
+      const strings = this._pack?.strings || en.strings;
+      const stateText = this._voiceGuideEnabled ? strings.voiceGuideOn : strings.voiceGuideOff;
+      this._els.voiceGuideToggle.setAttribute("aria-checked", String(this._voiceGuideEnabled));
+      this._els.voiceGuideToggle.setAttribute("aria-label", stateText);
+      this._els.voiceGuideToggle.textContent = stateText;
+      this._els.voiceGuideState.textContent = stateText;
+      this._els.voiceGuideSettings.hidden = !this._voiceGuideEnabled;
+      this._els.voiceGuideHelper.textContent = strings.voiceGuideHelper;
+      if (!this._voiceGuideEnabled) {
+        this._stopVoiceGuide();
+        // Speak the state change before disabling future focus narration.
+        this._voiceGuideEnabled = true;
+        this._announce(strings.voiceGuideOff);
+        this._voiceGuideEnabled = false;
+      } else {
+        this._refreshVoiceChoices();
+        this._caption(strings.voiceGuideOn);
+        this._announce(strings.voiceGuideOn);
+      }
+    }
+
+    _refreshVoiceChoices() {
+      const select = this._els?.voiceGuideVoice;
+      if (!select) return;
+      const strings = this._pack?.strings || en.strings;
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      const current = this._voiceGuideSettings.voiceName;
+      select.replaceChildren();
+      const automatic = document.createElement("option");
+      automatic.value = "";
+      automatic.textContent = strings.voiceChoiceAutomatic;
+      select.append(automatic);
+      for (const voice of voices) {
+        const option = document.createElement("option");
+        option.value = voice.name;
+        option.textContent = `${voice.name} (${voice.lang})`;
+        select.append(option);
+      }
+      select.value = voices.some((voice) => voice.name === current) ? current : "";
+    }
+
+    _describeFocusedControl(element) {
+      const name = this._focusedAccessibleName(element);
+      if (!name || element.hidden || element.closest("[hidden]")) return "";
+      const role = element.getAttribute("role") || ({ BUTTON: "button", A: "link", SELECT: "combobox", TEXTAREA: "text area", INPUT: "input", SUMMARY: "button" }[element.tagName] || "control");
+      const state = [];
+      if (element.hasAttribute("aria-expanded")) state.push(element.getAttribute("aria-expanded") === "true" ? (this._pack?.strings.expanded || "expanded") : (this._pack?.strings.collapsed || "collapsed"));
+      if (element.hasAttribute("aria-checked")) state.push(element.getAttribute("aria-checked") === "true" ? (this._pack?.strings.on || "on") : (this._pack?.strings.off || "off"));
+      if (element.hasAttribute("aria-pressed")) state.push(element.getAttribute("aria-pressed") === "true" ? (this._pack?.strings.on || "on") : (this._pack?.strings.off || "off"));
+      return [name, ...state, role].join(", ");
     }
 
     _focusablePanelElements() {
@@ -1054,6 +1286,29 @@
       e.microphone.addEventListener("click", () => this._startVoiceInput());
       e.voiceCommand.addEventListener("click", () => this._startVoiceCommand());
       e.voiceGuide.addEventListener("click", () => this._loadVoiceGuide());
+      e.voiceGuideToggle.addEventListener("click", () => this._toggleVoiceGuide());
+      e.voiceGuideRate.addEventListener("input", () => { this._voiceGuideSettings.rate = Number(e.voiceGuideRate.value); this._persistAccessibilityPreferences(); });
+      e.voiceGuideVolume.addEventListener("input", () => { this._voiceGuideSettings.volume = Number(e.voiceGuideVolume.value); this._persistAccessibilityPreferences(); });
+      e.voiceGuideVoice.addEventListener("change", () => { this._voiceGuideSettings.voiceName = e.voiceGuideVoice.value; this._persistAccessibilityPreferences(); });
+      e.voiceGuidePause.addEventListener("click", () => {
+        if (window.speechSynthesis?.paused) {
+          window.speechSynthesis.resume();
+          e.voiceGuidePause.textContent = this._pack.strings.pauseSpeaking;
+          this._caption(this._pack.strings.speechResumed);
+        } else {
+          window.speechSynthesis?.pause?.();
+          e.voiceGuidePause.textContent = this._pack.strings.resumeSpeaking;
+          this._caption(this._pack.strings.speechPaused);
+        }
+      });
+      e.voiceGuideStop.addEventListener("click", () => this._stopVoiceGuide());
+      e.voiceCaptionPin.addEventListener("click", () => {
+        this._voiceGuidePinned = !this._voiceGuidePinned;
+        e.voiceCaptionPin.setAttribute("aria-pressed", String(this._voiceGuidePinned));
+        if (this._voiceGuidePinned) this._caption(e.voiceCaptionText.textContent, { pinned: true });
+      });
+      e.voiceCaptionDismiss.addEventListener("click", () => { e.voiceCaption.hidden = true; });
+      window.speechSynthesis?.addEventListener?.("voiceschanged", () => this._refreshVoiceChoices());
       e.stopVoice.addEventListener("click", () => this._stopVoice());
       e.readBack.addEventListener("click", () => this._speakText(e.input.value, this._pack.lang, e.voiceStatus));
       e.escalation.addEventListener("submit", (event) => this._submitEscalation(event));
@@ -1067,12 +1322,14 @@
       this._escapeHandler = (event) => {
         if (e.panel.hidden) return;
         if (event.key === "Escape") {
+          this._stopVoiceGuide();
           event.preventDefault();
           if (!e.accommodationForm.hidden) this._closeAccommodation();
           else if (!e.escalation.hidden) this._closeEscalation();
           else this._close();
           return;
         }
+        if (event.key === "Control") this._stopVoiceGuide();
         if (event.key !== "Tab") return;
         const focusable = this._focusablePanelElements();
         if (!focusable.length) {
@@ -1091,6 +1348,11 @@
         }
       };
       this._shortcutHandler = (event) => {
+        if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === "v") {
+          event.preventDefault();
+          this._toggleVoiceGuide();
+          return;
+        }
         if (event.altKey && event.shiftKey && event.key.toLowerCase() === "a") {
           event.preventDefault();
           if (e.panel.hidden) this._open();
@@ -1506,7 +1768,8 @@
           : source
             ? `${this._pack?.strings.answerReady || en.strings.answerReady}. ${this._pack?.strings.sourceAnnouncement || en.strings.sourceAnnouncement}: ${source}`
             : (this._pack?.strings.answerReady || en.strings.answerReady);
-        this._announce(announcement);
+        this._announce(announcement, false, false);
+        if (this._voiceGuideEnabled) this._speakVoiceGuide(`${announcement}. ${message.text}`, lang);
       }
 
       if (persist) {
@@ -1658,6 +1921,28 @@
       write(e.title, "dialogTitle");
       write(e.close, "close");
       write(e.person, "person");
+      write(e.voiceGuideLabel, "voiceGuideLabel");
+      write(e.voiceGuideHelper, "voiceGuideHelper");
+      write(e.voiceGuideRateLabel, "voiceGuideRate");
+      write(e.voiceGuideVolumeLabel, "voiceGuideVolume");
+      write(e.voiceGuideVoiceLabel, "voiceGuideVoice");
+      write(e.voiceCaptionLabel, "voiceCaption");
+      write(e.voiceGuidePause, "pauseSpeaking");
+      write(e.voiceGuideStop, "stopSpeaking");
+      write(e.voiceCaptionPin, "pinCaption");
+      write(e.voiceCaptionDismiss, "dismissCaption");
+      const voiceGuideStateText = this._voiceGuideEnabled ? s.voiceGuideOn : s.voiceGuideOff;
+      e.voiceGuideToggle.setAttribute("aria-label", voiceGuideStateText);
+      e.voiceGuideToggle.textContent = voiceGuideStateText;
+      e.voiceGuideToggle.setAttribute("aria-checked", String(this._voiceGuideEnabled));
+      e.voiceGuideState.textContent = this._voiceGuideEnabled ? s.voiceGuideOn : s.voiceGuideOff;
+      e.voiceGuideSettings.hidden = !this._voiceGuideEnabled;
+      e.voiceGuideRate.value = String(this._voiceGuideSettings.rate);
+      e.voiceGuideVolume.value = String(this._voiceGuideSettings.volume);
+      e.voiceGuideVoice.setAttribute("aria-label", s.voiceGuideVoice || en.strings.voiceGuideVoice);
+      e.voiceGuideRate.setAttribute("aria-label", s.voiceGuideRate || en.strings.voiceGuideRate);
+      e.voiceGuideVolume.setAttribute("aria-label", s.voiceGuideVolume || en.strings.voiceGuideVolume);
+      this._refreshVoiceChoices();
       write(e.accessibilityLabel, "accessibilityOptions");
       write(e.textSizeLabel, "textSize");
       e.panelInstructions.textContent = s.panelInstructions || en.strings.panelInstructions;
@@ -2843,6 +3128,7 @@
 
     _openAccommodation() {
       this._focusBeforeAccommodation = this.shadowRoot.activeElement;
+      if (!this._els.escalation.hidden) this._closeEscalation();
       this._els.accommodationForm.hidden = false;
       this._populateAccommodationChoices();
       this._els.accommodationJob.focus();

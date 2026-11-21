@@ -119,3 +119,60 @@ test("keyboard flow exposes answer navigation, language direction, simple langua
   await expect(assistant.locator("#panel")).toHaveAttribute("dir", "rtl");
   await expect(assistant.locator("#question")).toHaveAttribute("lang", "ar");
 });
+
+test("voice guide is opt-in, persists, and captions every mocked utterance", async ({ page }) => {
+  const assistant = page.locator("db-assistant");
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#language-select").selectOption("en");
+  await expect(assistant.locator("#panel")).toHaveAttribute("lang", "en");
+  await expect(assistant.locator("#send")).toHaveText("Send");
+  await assistant.evaluate((element) => {
+    const spoken = [];
+    let cancelCount = 0;
+    const speech = {
+      speaking: false, paused: false,
+      getVoices: () => [{ name: "Test English", lang: "en-US" }],
+      cancel: () => { cancelCount += 1; speech.speaking = false; },
+      pause: () => { speech.paused = true; },
+      resume: () => { speech.paused = false; },
+      speak: (utterance) => { spoken.push(utterance.text); speech.speaking = true; }
+    };
+    Object.defineProperty(window, "speechSynthesis", { configurable: true, value: speech });
+    window.SpeechSynthesisUtterance = function (text) { this.text = text; };
+    window.__voiceGuideEvidence = { spoken, get cancelCount() { return cancelCount; } };
+    element._toggleVoiceGuide(true);
+  });
+  await expect(assistant.locator("#voice-guide-toggle")).toHaveAttribute("aria-checked", "true");
+  await expect(assistant.locator("#voice-guide-toggle")).toContainText("On");
+  await assistant.locator("#send").focus();
+  await expect.poll(() => assistant.evaluate(() => window.__voiceGuideEvidence.spoken.some((text) => text === "Send, button"))).toBe(true);
+  await expect(assistant.locator("#voice-caption-text")).toContainText("Send, button");
+  await expect.poll(() => assistant.evaluate(() => window.__voiceGuideEvidence.cancelCount)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+  await expect(assistant.locator("#panel")).toBeHidden();
+  await expect.poll(() => assistant.evaluate(() => window.__voiceGuideEvidence.cancelCount)).toBeGreaterThan(1);
+
+  await page.reload();
+  const returned = page.locator("db-assistant");
+  await expect(returned.locator("#launcher")).toBeEnabled();
+  await returned.locator("#launcher").click();
+  await expect(returned.locator("#voice-guide-toggle")).toHaveAttribute("aria-checked", "true");
+  await returned.locator("#voice-guide-toggle").click();
+  await expect(returned.locator("#voice-guide-toggle")).toHaveAttribute("aria-checked", "false");
+  await expect(returned.locator("#voice-guide-helper")).toContainText("Alt+V");
+});
+
+test("voice guide shows a text fallback when the selected language has no voice", async ({ page }) => {
+  const assistant = page.locator("db-assistant");
+  await assistant.locator("#launcher").click();
+  await assistant.locator("#language-select").selectOption("en");
+  await expect(assistant.locator("#send")).toHaveText("Send");
+  await assistant.evaluate((element) => {
+    const speech = { speaking: false, paused: false, getVoices: () => [], cancel: () => {}, speak: () => {} };
+    Object.defineProperty(window, "speechSynthesis", { configurable: true, value: speech });
+    window.SpeechSynthesisUtterance = function (text) { this.text = text; };
+    element._toggleVoiceGuide(true);
+  });
+  await expect(assistant.locator("#voice-caption-text")).toContainText("No English voice on this device");
+  await expect(assistant.locator("#assistant-announcer")).toContainText("No English voice on this device");
+});

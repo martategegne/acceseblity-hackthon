@@ -120,6 +120,13 @@ These checks are manual evidence to collect, not automated or conformance sign-o
 
 ### Additional follow-up checks
 
+- Run separate NVDA, TalkBack, and VoiceOver sessions with Voice guide off. Confirm the existing names, roles, states, one polite announcement channel, and focus behavior remain usable.
+- Repeat each session with Voice guide on. Confirm the guide narrates the focused control once, captions match the spoken text, and there is no confusing double speech. Keep the guide off for a screen-reader user who prefers the screen reader alone.
+- In Amharic and Tigrinya, test a device with no matching speech voice. Confirm the component announces and shows the language-specific fallback and never speaks it with a wrong-language voice. Repeat with Arabic and confirm `dir="rtl"`.
+- Test the Voice guide with a braille display. Confirm the switch state, caption text, pause/resume, stop, rate, volume, and voice controls have useful names and that the answer remains plain text.
+- Ask a deaf or hard-of-hearing co-designer to complete the typed question, answer/source, and tutor handoff with sound muted. Confirm the caption bar, transcript, visible tutor status/code, and text form are sufficient without audio.
+- Test Alt+V, Escape, and the Control-key stop behavior while a screen reader is active. Record any browser or screen-reader shortcut conflict rather than assuming the shortcut is safe.
+
 - Open a tutor request, confirm the visible status is Waiting with its code, then test Answered and Closed states. Use Escape from the form and confirm focus returns to the trigger.
 - Ask a question with more than one source. Confirm the Sources heading and every link identify its lesson section.
 - Repeat the task at actual 200% and 400% browser zoom. Confirm no clipping, horizontal scrolling, or unreachable status controls.

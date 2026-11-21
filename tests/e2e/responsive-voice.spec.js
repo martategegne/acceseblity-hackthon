@@ -368,6 +368,7 @@ test("spoken task sends a reviewed tutor draft without a button and reuses its i
   await page.goto("/demo/blank.html");
   const assistant = page.locator("db-assistant");
   await expect(assistant.locator("#launcher")).toBeEnabled();
+  console.log("STAGE launcher");
   await assistant.locator("#launcher").click();
   const recordCommand = async () => {
     await assistant.locator("#voice-command").click();
@@ -376,6 +377,7 @@ test("spoken task sends a reviewed tutor draft without a button and reuses its i
   };
   await recordCommand();
   await expect(assistant.locator("#escalation")).toBeVisible();
+  console.log("STAGE escalation");
   await assistant.locator("#consent").check();
   await recordCommand();
   await expect(assistant.locator("#messages")).toContainText("Review this tutor request");
