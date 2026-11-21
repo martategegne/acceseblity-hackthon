@@ -248,7 +248,7 @@ These results are local automated checks and reported observations, not a comple
 
 ## Accessibility and privacy
 
-The assistant includes keyboard answer/source navigation, polite state announcements, explicit language direction metadata, descriptive source links, a text-first tutor handoff, visible transcripts and stop states, and an optional simple-language answer when supplied. These are implementation behaviors covered by automated checks; NVDA, TalkBack, VoiceOver, braille-display, deaf co-designer, fluent-speaker, physical audio, and actual 200%/400% zoom verification remain open.
+The assistant includes keyboard answer/source navigation, polite state announcements, explicit language direction metadata, descriptive source links, a text-first tutor handoff with visible Waiting/Answered/Closed status, visible transcripts and voice states, vibration as an optional supplemental cue, media caption validation, and an optional simple-language answer when supplied. These are implementation behaviors covered by automated checks; NVDA, TalkBack, VoiceOver, braille-display, deaf co-designer, fluent-speaker, physical audio, and actual 200%/400% zoom verification remain open.
 
 The co-designer accessibility gate is **NOT VERIFIED**. Keyboard-only, screen-reader, sound-off, and actual 200% zoom results remain unverified, and one co-designer report is not a WCAG conformance assessment. Fluent-speaker review of the non-English locales also remains outstanding. Real SMS and phone integrations require provider credentials and an externally reachable HTTPS deployment; no live provider callbacks have been tested. Review [CONFORMANCE.md](./CONFORMANCE.md) before making accessibility claims.
 

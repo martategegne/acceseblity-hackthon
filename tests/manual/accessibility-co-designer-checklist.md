@@ -118,6 +118,14 @@ Record whether the co-designer completed the entire sequence without tester assi
 
 These checks are manual evidence to collect, not automated or conformance sign-off. Keep each result as completed independently / completed with help / not completed.
 
+### Additional follow-up checks
+
+- Open a tutor request, confirm the visible status is Waiting with its code, then test Answered and Closed states. Use Escape from the form and confirm focus returns to the trigger.
+- Ask a question with more than one source. Confirm the Sources heading and every link identify its lesson section.
+- Repeat the task at actual 200% and 400% browser zoom. Confirm no clipping, horizontal scrolling, or unreachable status controls.
+- Activate Listen and voice input explicitly. Confirm the visible state changes between Listening, Playing, and Stopped, vibration is supplemental only, and the transcript remains available with sound muted.
+- If media is added, confirm captions and a visible transcript are present before treating the media flow as usable.
+
 1. Reload. Use Tab until the launcher is focused; confirm its focus outline is easy to see and the target is at least 44 by 44 CSS pixels. Press Enter or Space.
 2. Confirm focus moves to the chat heading. Press Tab through Close, Talk to a person, the accommodation action, language choices, question field, voice controls, and Send in that order. Do not use a mouse.
 3. Confirm you can still Tab to and activate a page link while the non-modal chat is open. Press Escape from inside the chat and again after tabbing to a page control. Confirm the panel closes and focus returns to the launcher.

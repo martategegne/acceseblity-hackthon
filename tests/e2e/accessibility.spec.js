@@ -100,6 +100,7 @@ test("keyboard flow exposes answer navigation, language direction, simple langua
   await expect(assistant.locator("#assistant-announcer")).toContainText("Source: Lesson 2, section Water cycle");
   await expect(assistant.locator("#skip-answer")).toBeVisible();
   await expect(assistant.locator("#jump-sources")).toBeVisible();
+  await expect(assistant.locator("#answer-sources")).toContainText("Sources");
   await expect(assistant.locator(".simple-language-toggle")).toBeVisible();
   await assistant.locator(".simple-language-toggle").click();
   await expect(assistant.locator(".message-assistant .message-body")).toHaveText("Short answer. One idea per line.");
@@ -109,7 +110,10 @@ test("keyboard flow exposes answer navigation, language direction, simple langua
   await assistant.locator("#consent").check();
   await assistant.locator("#send-escalation").click();
   await expect(assistant.locator("#escalation-status")).toContainText("ABC12345");
+  await expect(assistant.locator("#tutor-status")).toContainText("Waiting");
   await expect(assistant.locator("#assistant-announcer")).toContainText("Tutor request sent, code ABC12345");
+  await page.keyboard.press("Escape");
+  await expect(assistant.locator("#person")).toBeFocused();
 
   await assistant.locator("#language-select").selectOption("ar");
   await expect(assistant.locator("#panel")).toHaveAttribute("dir", "rtl");

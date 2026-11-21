@@ -574,6 +574,11 @@
       .listen-button { display: inline-flex; }
       .voice-status { min-height: 1.5em; margin: 0; }
       .voice-status:empty { display: none; }
+      .tutor-status { display: grid; gap: 5px; margin: 0; padding: 10px 12px; border: 1px solid var(--guide-line); border-inline-start: 4px solid var(--guide-accent); border-radius: 10px; background: var(--guide-wash); }
+      .tutor-status strong { font-size: .9em; }
+      .source-list { display: grid; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--guide-line); }
+      .source-list h3 { margin: 0; font-size: .9em; }
+      .source-list .course-link { margin-top: 0; }
       .voice-note audio { display: block; width: 100%; margin-block: 8px; }
       .voice-transcript { display: grid; gap: 5px; margin-block-start: 8px; padding: 9px 11px; border: 1px solid var(--guide-line); border-inline-start: 3px solid var(--guide-accent); border-radius: 10px; background: var(--guide-wash); }
       .voice-transcript[hidden] { display: none; }
@@ -729,6 +734,7 @@
             </section>
             <button type="button" class="secondary accommodation-open" id="accommodation-open"></button>
             <form id="accommodation-form" class="escalation" novalidate hidden>
+              <button type="button" class="secondary form-close" id="accommodation-close"></button>
               <p id="accommodation-privacy" role="note"></p>
               <label for="accommodation-job" id="accommodation-job-label"></label>
               <select id="accommodation-job" required></select>
@@ -740,6 +746,7 @@
               <button type="submit" id="accommodation-send"></button>
             </form>
             <form id="escalation" class="escalation" novalidate hidden>
+              <button type="button" class="secondary form-close" id="escalation-close"></button>
               <label for="escalation-reason" id="escalation-reason-label"></label>
               <select id="escalation-reason" name="handoffReason" required aria-required="true">
                 <option value=""></option>
@@ -768,6 +775,7 @@
                 <p id="screen-share-status" class="error" role="status" aria-live="polite"></p>
               </section>
               <p id="escalation-status" class="error" role="status" aria-live="polite"></p>
+              <p id="tutor-status" class="tutor-status" role="status" aria-live="polite" hidden><strong id="tutor-status-label"></strong><span id="tutor-status-code"></span></p>
               <button type="button" class="secondary" id="check-tutor-reply" hidden></button>
               <section id="ticket-data" class="screen-share" aria-labelledby="ticket-data-title" hidden>
                 <h3 id="ticket-data-title"></h3>
@@ -860,7 +868,8 @@
         accommodationJobLabel: $("accommodation-job-label"), accommodationJob: $("accommodation-job"),
         accommodationChoiceLabel: $("accommodation-choice-label"), accommodationChoice: $("accommodation-choice"),
         accommodationNoteLabel: $("accommodation-note-label"), accommodationNote: $("accommodation-note"),
-        accommodationStatus: $("accommodation-status"), accommodationSend: $("accommodation-send")
+        accommodationStatus: $("accommodation-status"), accommodationSend: $("accommodation-send"), accommodationClose: $("accommodation-close"),
+        escalationClose: $("escalation-close"), tutorStatus: $("tutor-status"), tutorStatusLabel: $("tutor-status-label"), tutorStatusCode: $("tutor-status-code")
       };
       this._els.screenShareStart.hidden = !screenCaptureAvailable;
       this._els.screenContextStart.hidden = screenCaptureAvailable;
@@ -1037,6 +1046,8 @@
       e.languageSelect.addEventListener("change", () => this.setAttribute("lang", e.languageSelect.value));
       e.person.addEventListener("click", () => this._openEscalation());
       e.accommodationOpen.addEventListener("click", () => this._openAccommodation());
+      e.escalationClose.addEventListener("click", () => this._closeEscalation());
+      e.accommodationClose.addEventListener("click", () => this._closeAccommodation());
       e.screenShareStart.addEventListener("click", () => this._startScreenShare());
       e.screenContextStart.addEventListener("click", () => this._sharePageContext());
       e.screenShareStop.addEventListener("click", () => this._stopScreenShare());
@@ -1057,7 +1068,9 @@
         if (e.panel.hidden) return;
         if (event.key === "Escape") {
           event.preventDefault();
-          this._close();
+          if (!e.accommodationForm.hidden) this._closeAccommodation();
+          else if (!e.escalation.hidden) this._closeEscalation();
+          else this._close();
           return;
         }
         if (event.key !== "Tab") return;
@@ -1106,6 +1119,7 @@
         this._pendingTutorTicketId = "";
       }
       this._els.checkTutorReply.hidden = !this._pendingTutorTicketId;
+      this._setTutorStatus(this._pendingTutorTicketId ? "waiting" : "", this._pendingTutorTicketId);
     }
 
     _restoreLearnerTickets() {
@@ -1362,13 +1376,18 @@
         const listen = document.createElement("button");
         listen.type = "button";
         listen.className = "secondary listen-button";
+        listen.setAttribute("aria-pressed", "false");
         listen.textContent = this._pack?.strings.listen || (lang === "am" ? am.strings.listen : en.strings.listen);
         listen.lang = actionLanguage;
         const listenStatus = document.createElement("p");
         listenStatus.className = "voice-status";
         listenStatus.setAttribute("role", "status");
         listenStatus.setAttribute("aria-live", "polite");
-        listen.addEventListener("click", () => this._speakText(content.textContent, lang, listenStatus));
+        listenStatus._control = listen;
+        listen.addEventListener("click", () => {
+          listen.setAttribute("aria-pressed", "true");
+          this._speakText(content.textContent, lang, listenStatus);
+        });
         answerActions.append(copy, listen);
         div.append(answerActions, copyStatus, listenStatus);
         if (typeof message.simpleText === "string" && message.simpleText.trim() && message.simpleText.trim() !== message.text.trim()) {
@@ -1390,6 +1409,16 @@
       const links = Array.isArray(message.links)
         ? message.links
         : (message.linkUrl && message.linkTitle ? [{ url: message.linkUrl, title: message.linkTitle }] : []);
+      const sourceList = isAssistant && links.length ? document.createElement("section") : null;
+      if (sourceList) {
+        sourceList.className = "source-list";
+        sourceList.id = "answer-sources";
+        sourceList.tabIndex = -1;
+        const sourceHeading = document.createElement("h3");
+        sourceHeading.textContent = this._pack?.strings.sourcesHeading || en.strings.sourcesHeading;
+        sourceList.setAttribute("aria-label", sourceHeading.textContent);
+        sourceList.append(sourceHeading);
+      }
       for (const source of isAssistant ? links : []) {
         if (!source?.url || !source?.title) continue;
         const link = document.createElement("a");
@@ -1398,10 +1427,10 @@
         const prefix = this._pack?.strings.readInCourse || (lang === "am" ? am.strings.readInCourse : en.strings.readInCourse);
         link.textContent = `${prefix}: ${source.title}`;
         link.setAttribute("aria-label", `${link.textContent} (${this._pack?.strings.sourceLabel || en.strings.sourceLabel}: ${source.title})`);
-        div.appendChild(link);
+        sourceList.appendChild(link);
       }
-      if (isAssistant && links.length) {
-        div.querySelector(".course-link")?.setAttribute("id", "answer-sources");
+      if (sourceList?.querySelector(".course-link")) {
+        div.appendChild(sourceList);
         this._els.jumpSources.hidden = false;
       }
 
@@ -1638,6 +1667,8 @@
       e.textReset.setAttribute("aria-label", s.textSizeDefault || en.strings.textSizeDefault);
       e.textIncrease.setAttribute("aria-label", s.textSizeLarger || en.strings.textSizeLarger);
       write(e.accommodationOpen, "accommodationButton");
+      write(e.accommodationClose, "close");
+      write(e.escalationClose, "close");
       write(e.languageLabel, "language");
       e.localeStatus.textContent = pack.incomplete ? (s.translationIncomplete || s.translationUnavailable || "") : "";
       e.localeStatus.lang = pack.lang;
@@ -1685,6 +1716,7 @@
       write(e.sendEscalation, "sendEscalation");
       write(e.tutorAvailability, "tutorAvailability");
       write(e.checkTutorReply, "checkTutorReply");
+      write(e.tutorStatusLabel, this._pendingTutorTicketId ? "tutorStatusWaiting" : "tutorStatusClosed");
       write(e.ticketDataTitle, "ticketDataTitle");
       write(e.ticketDataLabel, "ticketDataLabel");
       write(e.ticketDataNote, "ticketDataNote");
@@ -1933,7 +1965,11 @@
         queueUpdated = this._writeQuestionQueue(queue);
       }
       if (!queueUpdated) this._els.questionQueueStatus.textContent = strings.offlineQueueStorageFailed;
-      else if (result.ok) this._els.questionQueueStatus.textContent = strings.offlineQueueSent;
+      else if (result.ok) {
+        this._els.questionQueueStatus.textContent = strings.offlineQueueSent;
+        navigator.vibrate?.([40, 30, 40]);
+        this._announce(strings.offlineQueueSent);
+      }
       else if (index >= 0) this._els.questionQueueStatus.textContent = strings.offlineQueueRetryFailed;
       this._renderQuestionQueue();
       return result.ok && queueUpdated;
@@ -2251,6 +2287,8 @@
       this._els.voiceCommand.setAttribute("aria-pressed", active && commandMode ? "true" : "false");
       this._els.stopVoice.hidden = !active;
       this._els.voiceStatus.setAttribute("aria-busy", String(active));
+      this._els.voiceStatus.dataset.state = active ? mode || "active" : "stopped";
+      if (active) navigator.vibrate?.(40);
     }
 
     _setTranscript(text, visible = true) {
@@ -2678,14 +2716,18 @@
 
     async _speakText(text, language, statusNode) {
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        statusNode._control?.setAttribute("aria-pressed", "false");
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
         this._announce(statusNode.textContent, true);
         return;
       }
       statusNode.textContent = this._pack?.strings.speechStarted || en.strings.speechStarted;
+      statusNode.dataset.state = "playing";
+      navigator.vibrate?.(40);
       this._announce(statusNode.textContent);
       const { voice, lang } = await this._findSpeechVoice(language);
       if (!voice) {
+        statusNode._control?.setAttribute("aria-pressed", "false");
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
         this._announce(statusNode.textContent, true);
         return;
@@ -2699,12 +2741,16 @@
       utterance.onend = () => {
         if (this._speechStatusNode !== statusNode) return;
         statusNode.textContent = this._pack?.strings.speechFinished || en.strings.speechFinished;
+        statusNode.dataset.state = "stopped";
+        statusNode._control?.setAttribute("aria-pressed", "false");
         this._speechStatusNode = null;
         if (!this._voiceMode) this._els.stopVoice.hidden = true;
       };
       utterance.onerror = () => {
         if (this._speechStatusNode === statusNode) this._speechStatusNode = null;
         statusNode.textContent = this._pack?.strings.voiceUnavailable || en.strings.voiceUnavailable;
+        statusNode.dataset.state = "stopped";
+        statusNode._control?.setAttribute("aria-pressed", "false");
         this._announce(statusNode.textContent, true);
         if (!this._voiceMode) this._els.stopVoice.hidden = true;
       };
@@ -2712,10 +2758,18 @@
     }
 
     _openEscalation() {
+      this._focusBeforeEscalation = this.shadowRoot.activeElement;
       this._els.escalation.hidden = false;
       this._els.checkTutorReply.hidden = !this._pendingTutorTicketId;
       this._els.escalationReason.focus();
       this._emit("person", {});
+    }
+
+    _closeEscalation() {
+      if (this._els.escalation.hidden) return;
+      this._els.escalation.hidden = true;
+      (this._focusBeforeEscalation || this._els.person).focus?.();
+      this._focusBeforeEscalation = null;
     }
 
     _updateEscalationReasonState() {
@@ -2765,14 +2819,19 @@
             this._pendingTutorTicketId = "";
             try { localStorage.removeItem(this._pendingTutorKey); } catch { /* The reply is still shown in this chat. */ }
             e.checkTutorReply.hidden = true;
+            this._setTutorStatus("answered", this._pendingTutorTicketId || ticket.ticketId);
+            this._announce(this._pack.strings.tutorReplyAvailable);
           } else {
             e.escalationStatus.textContent = previousUpdate
               ? this._pack.strings.tutorReplyPending
               : this._pack.strings.tutorUpdateAvailable;
+            this._setTutorStatus("waiting", this._pendingTutorTicketId);
           }
         } else if (ticket.status === "waiting") {
           e.escalationStatus.textContent = this._pack.strings.tutorReplyPending;
+          this._setTutorStatus("waiting", this._pendingTutorTicketId);
         } else {
+          this._setTutorStatus("closed", this._pendingTutorTicketId);
           throw new Error("Tutor reply could not be checked.");
         }
       } catch {
@@ -2783,9 +2842,28 @@
     }
 
     _openAccommodation() {
+      this._focusBeforeAccommodation = this.shadowRoot.activeElement;
       this._els.accommodationForm.hidden = false;
       this._populateAccommodationChoices();
       this._els.accommodationJob.focus();
+    }
+
+    _closeAccommodation() {
+      if (this._els.accommodationForm.hidden) return;
+      this._els.accommodationForm.hidden = true;
+      (this._focusBeforeAccommodation || this._els.accommodationOpen).focus?.();
+      this._focusBeforeAccommodation = null;
+    }
+
+    _setTutorStatus(status, ticketId = this._pendingTutorTicketId) {
+      const e = this._els;
+      if (!e?.tutorStatus) return;
+      const strings = this._pack?.strings || en.strings;
+      e.tutorStatus.hidden = !ticketId;
+      const key = status ? `tutorStatus${status[0].toUpperCase()}${status.slice(1)}` : "tutorStatusClosed";
+      e.tutorStatusLabel.textContent = strings[key] || status;
+      e.tutorStatusCode.textContent = ticketId ? `${strings.ticketReference || en.strings.ticketReference}`.replace("{ticketId}", ticketId) : "";
+      e.tutorStatus.lang = this._pack?.lang || "en";
     }
 
     _blobAsDataUrl(blob) {
@@ -3118,6 +3196,7 @@
         this._pendingTutorTicketId = result.ticketId;
         try { localStorage.setItem(this._pendingTutorKey, this._pendingTutorTicketId); } catch { /* Keep reply checks available until the page closes. */ }
         e.checkTutorReply.hidden = false;
+        this._setTutorStatus("waiting", result.ticketId);
         e.escalationStatus.textContent = `${this._pack.strings.escalationSent} ${this._ticketReference(result.ticketId)}`;
         const tutorAnnouncement = (this._pack.strings.tutorRequestSent || en.strings.tutorRequestSent).replace("{ticketId}", result.ticketId);
         this._announce(tutorAnnouncement);

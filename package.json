@@ -6,6 +6,7 @@
     "test": "node --test tests/search.test.js",
     "build:module": "node scripts/build-module.mjs",
     "check:module-size": "node scripts/check-module-size.mjs",
+    "check:media": "node scripts/check-media-captions.mjs",
     "test:e2e": "playwright test",
     "test:axe": "playwright test tests/e2e/axe.spec.js"
   },

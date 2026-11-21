@@ -6,6 +6,8 @@ The learner component now includes keyboard answer/source skip links, an explici
 
 These changes are implementation evidence only. NVDA, TalkBack, VoiceOver, braille display, deaf/hard-of-hearing co-designer review, fluent-speaker review, physical speech devices, actual 200%/400% zoom, and live SMS/Telegram/phone delivery remain unverified. The gate stays **NOT VERIFIED**.
 
+Follow-up implementation also adds visible tutor lifecycle status, focus restoration for nested forms, multiple-source grouping, optional vibration alongside text state, a repository media-caption check, and higher-contrast Savanna page accents. These changes do not replace human assistive-technology or co-designer testing.
+
 This is a code-based self-assessment, not an independent accessibility audit or a claim of full WCAG conformance. “Supports” describes the feature as implemented in the repository; the whole product still needs manual testing with the target browsers, devices, and assistive technologies.
 
 **Gate status: NOT VERIFIED.** A co-designer report received 2026-11-20 says English and Amharic lesson answers cited the same section, the requested off-topic response appeared, and “Talk to a person” opened the handoff form. The original session date/time, tested revision, exact steps, task independence, and barriers were not recorded. Original-session consent is unknown; permission to record this summary was given in a follow-up, and no identifier is recorded. No ticket was submitted and no tutor reply was checked. The complete task under keyboard-only use, a screen reader, sound off, and actual 200% browser zoom is not established. Automated Playwright/axe results are not a substitute. Do not report this document as a completed WCAG 2.2 AA conformance report.
