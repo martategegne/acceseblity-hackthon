@@ -476,9 +476,9 @@
           .panel { position: fixed; z-index: 2147483646; inset-inline-end: clamp(12px, 2vw, 24px); inset-block-end: 84px; display: block; width: min(32rem, calc(100vw - 32px)); max-height: min(86dvh, 58rem); overflow: hidden; overscroll-behavior: contain; border: 1px solid var(--guide-line); border-block-start: 4px solid var(--guide-accent); border-radius: 24px; background: linear-gradient(145deg, var(--guide-paper), var(--guide-surface)); color: var(--assistant-foreground, var(--guide-ink)); padding: 0; box-shadow: var(--guide-shadow); animation: assistant-panel-enter .2s ease-out both; }
       .panel[hidden] { display: none; }
           .panel-inner { display: flex; flex-direction: column; gap: 16px; max-height: inherit; overflow-y: auto; overscroll-behavior: contain; padding: 16px; scrollbar-color: #829481 transparent; }
-          .header { position: sticky; inset-block-start: -16px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -16px -16px 0; padding: 16px 16px 13px; border-block-end: 1px solid var(--guide-line); background: color-mix(in srgb, var(--guide-paper) 94%, transparent); backdrop-filter: blur(12px); }
-          .header-title { min-width: 0; }
-          .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+          .header { position: sticky; inset-block-start: -16px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin: -16px -16px 0; padding: 16px 16px 13px; border-block-end: 1px solid var(--guide-line); background: color-mix(in srgb, var(--guide-paper) 94%, transparent); backdrop-filter: blur(12px); }
+          .header-title { flex: 1 1 12rem; min-width: 0; }
+          .header-actions { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
           .accessibility-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
           .accessibility-controls button { min-width: 40px; min-height: 40px; padding: 7px 9px; }
           .text-size-controls { display: flex; align-items: center; gap: 4px; }
@@ -491,6 +491,7 @@
           .composer-actions { display: grid; gap: 10px; }
           .composer-actions #send { width: 100%; }
       h2, p { margin: 0; overflow-wrap: anywhere; }
+          .header-title h2 { overflow-wrap: break-word; word-break: normal; }
           h2 { position: relative; padding-inline-start: 13px; color: var(--assistant-foreground, var(--guide-ink)); font-family: inherit; font-size: clamp(1.2rem, 4vw, 1.45rem); font-weight: 750; line-height: 1.35; letter-spacing: -.015em; }
       h2::before { content: ""; position: absolute; inset-block: 3px; inset-inline-start: 0; width: 3px; background: var(--guide-accent); }
           #close { min-width: 44px; padding-inline: 10px; border-radius: 12px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); border-color: var(--guide-line); }

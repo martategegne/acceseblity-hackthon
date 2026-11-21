@@ -380,6 +380,36 @@
     .lesson-note p { margin: 1px 0 0; color: var(--ink-soft); font-size: .86rem; }
     .note-action { margin-left: auto; color: var(--forest); font-size: .78rem; font-weight: 750; white-space: nowrap; }
 
+    .lesson-tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: -28px 0 34px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 253, .8);
+    }
+    .lesson-tools button, .section-read {
+      min-height: 38px;
+      padding: 7px 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      color: var(--forest);
+      background: #f4f8f3;
+      font: inherit;
+      font-size: .78rem;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .lesson-tools button:hover, .lesson-tools button:focus-visible, .section-read:hover, .section-read:focus-visible {
+      border-color: #c8dfcc;
+      color: var(--forest-deep);
+      background: var(--leaf-soft);
+    }
+    .lesson-tools-status { margin: 0; color: var(--ink-soft); font-size: .8rem; }
+
     .lesson-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 248px;
@@ -427,6 +457,7 @@
       scroll-margin-top: 145px;
     }
     .section-copy { max-width: 680px; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.78; }
+    .section-read { margin-top: 18px; }
     .section-arrow { position: absolute; right: 25px; bottom: 23px; color: #b8c9ba; font-size: 1.15rem; line-height: 1; }
 
     .lesson-sidebar { position: sticky; top: 144px; }
@@ -586,7 +617,7 @@
           <a href="#what-this-means-for-aspiring-virtual-assistants" data-section="section-4"><span class="nav-number">04</span><span>For aspiring VAs</span></a>
           <a href="#so-is-the-future-of-va-promising" data-section="section-5"><span class="nav-number">05</span><span>The outlook</span></a>
         </nav>
-        <div class="reading-progress" aria-hidden="true"><span></span></div>
+        <div class="reading-progress" role="progressbar" aria-label="Lesson reading progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="1" aria-valuetext="Section 1 of 5"><span aria-hidden="true"></span></div>
       </div>
     </div>
   </header>
@@ -617,6 +648,13 @@
       <span class="note-action">Ask Savanna anytime</span>
     </aside>
 
+    <section class="lesson-tools" aria-labelledby="accessibility-tools-heading">
+      <strong id="accessibility-tools-heading">Accessibility tools</strong>
+      <button type="button" data-read-lesson aria-pressed="false">Read lesson aloud</button>
+      <button type="button" data-stop-reading disabled>Stop reading</button>
+      <p class="lesson-tools-status" id="lesson-announcer" role="status" aria-live="polite" aria-atomic="true">Text, captions, and visual status messages are available.</p>
+    </section>
+
     <div class="lesson-layout">
       <div class="lesson-sections">
         <section class="lesson-section is-active" id="section-1" data-section-card aria-labelledby="what-is-shaping-the-future-of-va-work">
@@ -625,6 +663,7 @@
             <p class="section-kicker">The changing landscape</p>
             <h2 class="section-heading" id="what-is-shaping-the-future-of-va-work">What is Shaping the Future of VA Work</h2>
             <p class="section-copy">The world of virtual assistance is evolving quickly due to rapid technological change and the global shift toward remote employment. Businesses of all sizes now rely on digital collaboration tools to work with talent anywhere in the world. Instead of simply performing manual data entry or scheduling appointments, modern virtual assistants must navigate integrated digital environments, understand automated workflows, and continuously adapt to new software platforms.</p>
+            <button class="section-read" type="button" data-read-section aria-controls="section-1">Read this section aloud</button>
           </div>
           <span class="section-arrow" aria-hidden="true">↘</span>
         </section>
@@ -635,6 +674,7 @@
             <p class="section-kicker">Technology as a partner</p>
             <h2 class="section-heading" id="artificial-intelligence-and-the-future-of-va-work">Artificial Intelligence and the Future of VA Work</h2>
             <p class="section-copy">Artificial intelligence tools like generative language models and automated agents are transforming daily virtual assistance tasks. Rather than eliminating human assistants, artificial intelligence automates repetitive duties such as drafting routine emails, transcribing audio recordings, and organizing spreadsheets. Virtual assistants who learn to harness AI tools can work much faster and deliver higher quality results. However, human judgment, ethical discretion, and emotional intelligence remain indispensable qualities that AI cannot replace.</p>
+            <button class="section-read" type="button" data-read-section aria-controls="section-2">Read this section aloud</button>
           </div>
           <span class="section-arrow" aria-hidden="true">↘</span>
         </section>
@@ -645,6 +685,7 @@
             <p class="section-kicker">The human advantage</p>
             <h2 class="section-heading" id="what-clients-are-likely-to-value-more-and-more">What Clients Are Likely to Value More and More</h2>
             <p class="section-copy">As basic administrative tasks become automated, clients increasingly prioritize higher-level human qualities in their assistants. Clients place great value on proactive problem solving, clear communication, trustworthy data security, and genuine reliability. Instead of waiting passively for instructions, valued assistants anticipate client needs, suggest process improvements, and take full ownership of their responsibilities. Specialized knowledge in areas like customer relations or digital project coordination makes an assistant especially sought after.</p>
+            <button class="section-read" type="button" data-read-section aria-controls="section-3">Read this section aloud</button>
           </div>
           <span class="section-arrow" aria-hidden="true">↘</span>
         </section>
@@ -655,6 +696,7 @@
             <p class="section-kicker">Building your foundation</p>
             <h2 class="section-heading" id="what-this-means-for-aspiring-virtual-assistants">What This Means for Aspiring Virtual Assistants</h2>
             <p class="section-copy">For newcomers entering the field, success requires a commitment to continuous learning and digital literacy. Aspiring virtual assistants should build foundational digital skills, practice effective asynchronous communication, and become comfortable using modern productivity applications. Developing a clear portfolio of work samples and demonstrating strong attention to detail will set beginners apart. Embracing adaptability and curiosity is the most reliable strategy for building a lasting career.</p>
+            <button class="section-read" type="button" data-read-section aria-controls="section-4">Read this section aloud</button>
           </div>
           <span class="section-arrow" aria-hidden="true">↘</span>
         </section>
@@ -665,6 +707,7 @@
             <p class="section-kicker">Looking ahead</p>
             <h2 class="section-heading" id="so-is-the-future-of-va-promising">So, is the Future of VA Promising?</h2>
             <p class="section-copy">The outlook for skilled and adaptable virtual assistants is exceptionally bright. As companies worldwide continue to embrace flexible work arrangements and lean operational models, demand for dependable remote talent keeps growing. Those who continuously upgrade their skills and collaborate effectively with technological tools will find rewarding opportunities across multiple industries. The future belongs to proactive professionals who view technology as an ally rather than a threat.</p>
+            <button class="section-read" type="button" data-read-section aria-controls="section-5">Read this section aloud</button>
           </div>
           <span class="section-arrow" aria-hidden="true">↘</span>
         </section>
@@ -702,8 +745,49 @@
       const progressBar = document.querySelector(".reading-progress span");
       const sidebarProgress = document.querySelector(".sidebar-progress span");
       const progressLabel = document.querySelector("[data-progress-label]");
+      const readingProgress = document.querySelector(".reading-progress");
+      const announcer = document.getElementById("lesson-announcer");
+      const readLessonButton = document.querySelector("[data-read-lesson]");
+      const stopReadingButton = document.querySelector("[data-stop-reading]");
+      const readSectionButtons = [...document.querySelectorAll("[data-read-section]")];
       const navigationPanel = document.querySelector("[data-open].navigation-panel");
       const navigationToggle = document.querySelector("[data-navigation-toggle]");
+
+      const setReadingStatus = (message) => {
+        if (announcer) announcer.textContent = message;
+      };
+
+      const stopReading = () => {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        readLessonButton?.setAttribute("aria-pressed", "false");
+        if (stopReadingButton) stopReadingButton.disabled = true;
+      };
+
+      const speak = (text, label) => {
+        if (!("speechSynthesis" in window)) {
+          setReadingStatus("Read-aloud is not supported in this browser. The lesson text remains available.");
+          return;
+        }
+        stopReading();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = document.documentElement.lang || "en";
+        utterance.onstart = () => {
+          if (stopReadingButton) stopReadingButton.disabled = false;
+          setReadingStatus(`Reading ${label}.`);
+        };
+        utterance.onend = () => {
+          readLessonButton?.setAttribute("aria-pressed", "false");
+          if (stopReadingButton) stopReadingButton.disabled = true;
+          setReadingStatus(`${label} finished. Captions and text remain available.`);
+        };
+        utterance.onerror = () => {
+          readLessonButton?.setAttribute("aria-pressed", "false");
+          if (stopReadingButton) stopReadingButton.disabled = true;
+          setReadingStatus("Read-aloud stopped. The lesson text remains available.");
+        };
+        window.speechSynthesis.speak(utterance);
+      };
 
       const setNavigationOpen = (open) => {
         if (!navigationPanel || !navigationToggle) return;
@@ -715,6 +799,38 @@
         setNavigationOpen(navigationPanel.dataset.open !== "true");
       });
 
+      readLessonButton?.addEventListener("click", () => {
+        const text = cards.map((card) => {
+          const heading = card.querySelector(".section-heading")?.textContent || "";
+          const copy = card.querySelector(".section-copy")?.textContent || "";
+          return `${heading}. ${copy}`;
+        }).join("\n\n");
+        readLessonButton.setAttribute("aria-pressed", "true");
+        speak(`The Future of Virtual Assistant Work. ${text}`, "the full lesson");
+      });
+
+      stopReadingButton?.addEventListener("click", () => {
+        stopReading();
+        setReadingStatus("Read-aloud stopped. The lesson text remains available.");
+      });
+
+      readSectionButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const card = document.getElementById(button.getAttribute("aria-controls"));
+          if (!card) return;
+          const heading = card.querySelector(".section-heading")?.textContent || "this section";
+          const copy = card.querySelector(".section-copy")?.textContent || "";
+          speak(`${heading}. ${copy}`, heading);
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && window.speechSynthesis?.speaking) {
+          stopReading();
+          setReadingStatus("Read-aloud stopped. The lesson text remains available.");
+        }
+      });
+
       const setActiveSection = (sectionId) => {
         const activeIndex = cards.findIndex((card) => card.id === sectionId);
         if (activeIndex < 0) return;
@@ -724,6 +840,12 @@
           if (isActive) link.setAttribute("aria-current", "true");
           else link.removeAttribute("aria-current");
         });
+        if (readingProgress) {
+          const current = activeIndex + 1;
+          readingProgress.setAttribute("aria-valuenow", String(current));
+          readingProgress.setAttribute("aria-valuetext", `Section ${current} of ${cards.length}`);
+        }
+        if (announcer) announcer.textContent = `Section ${activeIndex + 1} of ${cards.length}: ${cards[activeIndex].querySelector(".section-heading")?.textContent || ""}`;
         if (sidebarProgress) sidebarProgress.style.width = `${((activeIndex + 1) / cards.length) * 100}%`;
         if (progressLabel) progressLabel.textContent = `${activeIndex + 1} of ${cards.length}`;
       };
