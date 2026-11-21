@@ -518,10 +518,41 @@
       :root { scroll-behavior: auto; }
       *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
+
+    .assistant-host-toast {
+      position: fixed;
+      z-index: 250;
+      top: 80px;
+      right: 20px;
+      width: min(360px, calc(100vw - 32px));
+      padding: 12px 15px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      color: var(--ink);
+      background: rgba(255, 255, 253, .98);
+      box-shadow: var(--shadow-lg);
+      font-size: .86rem;
+      line-height: 1.45;
+      pointer-events: none;
+      transform: translateY(-8px);
+      opacity: 0;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .assistant-host-toast:not([hidden]) {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    @media (max-width: 640px) {
+      .assistant-host-toast { top: 72px; right: 16px; left: 16px; width: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .assistant-host-toast { transition: none; }
+    }
   </style>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to lesson content</a>
+  <div id="assistant-host-toast" class="assistant-host-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
   <header class="site-header">
     <div class="header-shell">
@@ -716,7 +747,130 @@
       window.addEventListener("resize", updateReadingProgress);
     })();
   </script>
-  <script src="../../module/db-assistant.min.js?v=16"></script>
+  <script src="../../module/db-assistant.js?v=17"></script>
   <db-assistant lang="am"></db-assistant>
+  <script>
+    (() => {
+      const toast = document.getElementById("assistant-host-toast");
+      if (!toast) return;
+
+      const seenNotifications = new Map();
+      let hideTimer;
+
+      const compact = (value, maxLength = 120) => {
+        if (typeof value !== "string") return "";
+        const text = value.replace(/\s+/g, " ").trim();
+        return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+      };
+
+      const assistantForEvent = (event) => {
+        const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+        return path.find((node) => node?.nodeType === 1 && node.localName === "db-assistant") || null;
+      };
+
+      const isAssistantEvent = (event) => {
+        return Boolean(assistantForEvent(event));
+      };
+
+      const notificationKey = (name, detail) => [
+        name,
+        detail.ticketId || "",
+        detail.text || "",
+        detail.language || "",
+        detail.input || "",
+        detail.type || "",
+        detail.source || ""
+      ].join("\u001f");
+
+      const isDuplicate = (name, detail) => {
+        const key = notificationKey(name, detail);
+        const now = Date.now();
+        const previous = seenNotifications.get(key);
+        const persistent = name === "escalated" && Boolean(detail.ticketId);
+        if (previous && (persistent || now - previous < 2000)) return true;
+        seenNotifications.set(key, now);
+        if (!persistent) {
+          window.setTimeout(() => {
+            if (seenNotifications.get(key) === now) seenNotifications.delete(key);
+          }, 2000);
+        }
+        return false;
+      };
+
+      const showToast = (name, detail, message) => {
+        if (isDuplicate(name, detail)) return;
+        window.clearTimeout(hideTimer);
+        toast.textContent = message;
+        toast.hidden = false;
+        hideTimer = window.setTimeout(() => {
+          toast.hidden = true;
+        }, 4500);
+      };
+
+      const sendAnswer = (assistant, detail) => {
+        assistant.dispatchEvent(new CustomEvent("db-assistant:answer", {
+          bubbles: true,
+          composed: true,
+          detail
+        }));
+      };
+
+      const processQuestion = async (assistant, question) => {
+        const base = (assistant.getAttribute("api") || location.origin).replace(/\/$/, "");
+        try {
+          const response = await fetch(`${base}/api/v1/ask`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              question: question.text,
+              language: question.language || "en",
+              externalAiConsent: question.externalAiConsent === true
+            })
+          });
+          if (!response.ok) throw new Error(`Host answer request returned HTTP ${response.status}`);
+          const result = await response.json();
+          if (typeof result.answer !== "string" || !result.answer.trim()) throw new Error("Host answer was empty");
+          sendAnswer(assistant, {
+            requestId: question.requestId,
+            answer: result.answer,
+            language: result.language || question.language || "en",
+            sources: Array.isArray(result.sources) ? result.sources : [],
+            answerStatus: result.answerStatus
+          });
+        } catch (error) {
+          console.warn("Savanna host could not answer the assistant question.", error);
+          sendAnswer(assistant, {
+            requestId: question.requestId,
+            error: "host-answer-failed"
+          });
+        }
+      };
+
+      document.addEventListener("db-assistant:question", (event) => {
+        if (!isAssistantEvent(event)) return;
+        const detail = event.detail && typeof event.detail === "object" ? event.detail : {};
+        const input = detail.input === "voice" ? "Voice question" : "Question";
+        const language = detail.language ? ` · ${String(detail.language).toUpperCase()}` : "";
+        const text = compact(detail.text);
+        showToast("question", detail, `${input} submitted${language}${text ? `: “${text}”` : "."}`);
+        if (detail.input !== "text" || typeof detail.requestId !== "string" || !detail.text) return;
+        const assistant = assistantForEvent(event);
+        if (!assistant || detail.hostHandled) return;
+        detail.hostHandled = true;
+        void processQuestion(assistant, detail);
+      });
+
+      document.addEventListener("db-assistant:escalated", (event) => {
+        if (!isAssistantEvent(event)) return;
+        const detail = event.detail && typeof event.detail === "object" ? event.detail : {};
+        const context = [
+          detail.type === "accommodation" ? "accommodation" : "",
+          detail.source === "voice" ? "voice" : "",
+          detail.ticketId ? `ticket ${compact(String(detail.ticketId), 48)}` : ""
+        ].filter(Boolean).join(", ");
+        showToast("escalated", detail, `Human support requested${context ? ` (${context})` : "."}`);
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -81,6 +81,8 @@
       this._submittingQuestion = false;
       this._retryingQuestionIds = new Set();
       this._flushingQuestionQueue = false;
+      this._hostAnswerWaiters = new Map();
+      this._hostAnswerHandler = (event) => this._handleHostAnswer(event);
       this._rememberPageFocus = (event) => {
         const target = event.composedPath?.()[0] || event.target;
         if (!this.shadowRoot?.contains(target)) this._lastPageFocusedElement = target;
@@ -89,6 +91,7 @@
 
     connectedCallback() {
       document.addEventListener("focusin", this._rememberPageFocus, true);
+      this.addEventListener("db-assistant:answer", this._hostAnswerHandler);
       if (this._onlineHandler) window.addEventListener("online", this._onlineHandler);
       if (this._escapeHandler) document.addEventListener("keydown", this._escapeHandler);
       if (this._built) return;
@@ -117,6 +120,7 @@
 
     disconnectedCallback() {
       document.removeEventListener("focusin", this._rememberPageFocus, true);
+      this.removeEventListener("db-assistant:answer", this._hostAnswerHandler);
       document.removeEventListener("keydown", this._escapeHandler);
       this._stopScreenShare(false);
       try { this._recognition?.stop(); } catch { /* Recognition may already be closed. */ }
@@ -126,6 +130,11 @@
       window.speechSynthesis?.cancel?.();
       window.removeEventListener("online", this._onlineHandler);
       if (this._voiceObjectUrl) URL.revokeObjectURL(this._voiceObjectUrl);
+      for (const waiter of this._hostAnswerWaiters.values()) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(null);
+      }
+      this._hostAnswerWaiters.clear();
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
@@ -1663,6 +1672,70 @@
       } catch { return { ok: false, retryable: true }; }
     }
 
+    _createHostAnswerWaiter(requestId) {
+      let resolveAnswer;
+      const promise = new Promise((resolve) => { resolveAnswer = resolve; });
+      const waiter = {
+        resolve: resolveAnswer,
+        timer: setTimeout(() => {
+          if (this._hostAnswerWaiters.get(requestId) !== waiter) return;
+          this._hostAnswerWaiters.delete(requestId);
+          resolveAnswer(null);
+        }, 10000)
+      };
+      this._hostAnswerWaiters.set(requestId, waiter);
+      return {
+        promise,
+        cancel: () => {
+          if (this._hostAnswerWaiters.get(requestId) !== waiter) return;
+          clearTimeout(waiter.timer);
+          this._hostAnswerWaiters.delete(requestId);
+          resolveAnswer(null);
+        }
+      };
+    }
+
+    _handleHostAnswer(event) {
+      const detail = event.detail && typeof event.detail === "object" ? event.detail : {};
+      const requestId = typeof detail.requestId === "string" ? detail.requestId : "";
+      const waiter = requestId ? this._hostAnswerWaiters.get(requestId) : null;
+      if (!waiter) return;
+      clearTimeout(waiter.timer);
+      this._hostAnswerWaiters.delete(requestId);
+      waiter.resolve(detail);
+    }
+
+    _appendHostAnswer(detail, language, requestId) {
+      if (!detail || detail.error) {
+        this._emit("error", { code: "host-answer-failed", requestId });
+        return false;
+      }
+      const text = typeof detail.answer === "string" ? detail.answer.trim() : "";
+      if (!text) {
+        this._emit("error", { code: "host-answer-invalid", requestId });
+        return false;
+      }
+      const answerStatus = ["answered", "not_found", "off_topic", "refused"].includes(detail.answerStatus)
+        ? detail.answerStatus
+        : undefined;
+      const links = answerStatus === "not_found"
+        ? []
+        : Array.isArray(detail.sources)
+          ? detail.sources
+            .filter((source) => typeof source?.url === "string" && source.url)
+            .map((source) => ({ url: source.url, title: source.title || source.type || "Source" }))
+          : [];
+      this._appendMessage({
+        role: "assistant",
+        text,
+        lang: typeof detail.language === "string" ? detail.language : language,
+        links,
+        answerStatus,
+        showPerson: ["not_found", "off_topic", "refused"].includes(answerStatus)
+      });
+      return true;
+    }
+
     _queueQuestion(question, language, externalAiConsent) {
       const queue = this._readQuestionQueue();
       const id = this._newQuestionQueueId();
@@ -1726,7 +1799,23 @@
 
       // 1. Append user's question
       this._appendMessage({ role: "user", text, lang: currentLang });
-      this._emit("question", { text, language: currentLang, input: "text" });
+      const requestId = this._newQuestionQueueId();
+      const hostAnswer = this._createHostAnswerWaiter(requestId);
+      const questionDetail = {
+        text,
+        language: currentLang,
+        input: "text",
+        requestId,
+        externalAiConsent,
+        hostHandled: false
+      };
+      this._emit("question", questionDetail);
+      if (questionDetail.hostHandled) {
+        const hostResult = await hostAnswer.promise;
+        if (this._appendHostAnswer(hostResult, currentLang, requestId)) return;
+      } else {
+        hostAnswer.cancel();
+      }
 
       const isOffline = !navigator.onLine;
       let wasQueued = false;
@@ -1930,7 +2019,7 @@
       }
       if (transcript) {
         this._appendMessage({ role: "user", text: transcript, lang: language });
-        this._emit("question", { text: transcript, language, input: "voice" });
+        this._emit("question", { text: transcript, language, input: "voice", requestId: this._newQuestionQueueId() });
         if (payload.conversation) payload.conversation = payload.conversation.concat({ role: "user", text: transcript.slice(0, 4000) }).slice(-20);
       }
       this._els.voiceStatus.textContent = strings.voiceCommandListening || en.strings.voiceCommandListening;
@@ -2024,7 +2113,7 @@
       const language = result.language || this._pack?.lang || "en";
       if (!userAlreadyShown && result.transcript) {
         this._appendMessage({ role: "user", text: result.transcript, lang: language });
-        this._emit("question", { text: result.transcript, language, input: "voice" });
+        this._emit("question", { text: result.transcript, language, input: "voice", requestId: this._newQuestionQueueId() });
       }
       let answerText = result.answerText || strings.voiceCommandFailed || en.strings.voiceCommandFailed;
       if (result.status === "consent_required") {

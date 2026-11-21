@@ -303,6 +303,71 @@ test("lesson exploration uses current lesson text, localizes prompts, and does n
   await expect(blankAssistant.locator("#lesson-explore-list button")).toHaveCount(0);
 });
 
+test("Savanna host completes assistant round trips and deduplicates notifications", async ({ page }) => {
+  let askRequests = 0;
+  await page.route("**/api/v1/ask", (route) => {
+    askRequests += 1;
+    if (askRequests === 1) {
+      return route.fulfill({ json: {
+        answer: "The host processed your question.",
+        sources: [{ url: "/savanna/pages/concept-with-navigation.html#what-is-shaping-the-future-of-va-work", title: "Future of VA work" }],
+        answerStatus: "answered"
+      } });
+    }
+    if (askRequests === 2) return route.fulfill({ status: 503, json: { detail: "Host unavailable" } });
+    return route.fulfill({ json: { answer: "The existing assistant fallback answered your question.", answerStatus: "answered" } });
+  });
+  await page.goto("/savanna/pages/concept-with-navigation.html");
+  const toast = page.locator("#assistant-host-toast");
+  const assistant = page.locator("db-assistant");
+  await expect(assistant.locator("#launcher")).toBeEnabled();
+  await assistant.locator("#launcher").click();
+
+  await assistant.locator("#question").fill("What does the host know?");
+  await assistant.locator("#send").click();
+  await expect(assistant.locator("#messages .message-assistant").last()).toContainText("The host processed your question.");
+  await expect(assistant.locator("#messages .message-assistant").last().locator("a.course-link")).toHaveAttribute("href", /concept-with-navigation\.html#/);
+  await expect(toast).toContainText("Question submitted");
+  await expect(toast).toContainText("What does the host know?");
+
+  await assistant.locator("#question").fill("What happens when the host fails?");
+  await assistant.locator("#send").click();
+  await expect(assistant.locator("#messages .message-assistant").last()).toContainText("The existing assistant fallback answered your question.");
+  expect(askRequests).toBe(3);
+
+  const questionMutationCount = await page.evaluate(() => new Promise((resolve) => {
+    const toastElement = document.querySelector("#assistant-host-toast");
+    const assistantElement = document.querySelector("db-assistant");
+    const shadowSource = assistantElement.shadowRoot.querySelector("#launcher");
+    let mutationCount = 0;
+    const observer = new MutationObserver(() => { mutationCount += 1; });
+    observer.observe(toastElement, { childList: true });
+    const detail = { text: "How do I prepare for remote work?", language: "am", input: "text" };
+    const event = () => new CustomEvent("db-assistant:question", { bubbles: true, composed: true, detail });
+    shadowSource.dispatchEvent(event());
+    shadowSource.dispatchEvent(event());
+    setTimeout(() => {
+      observer.disconnect();
+      resolve(mutationCount);
+    }, 0);
+  }));
+  expect(questionMutationCount).toBe(1);
+  await expect(toast).toContainText("Question submitted");
+  await expect(toast).toContainText("How do I prepare for remote work?");
+
+  await page.evaluate(() => {
+    const assistantElement = document.querySelector("db-assistant");
+    assistantElement.shadowRoot.querySelector("#launcher").dispatchEvent(new CustomEvent("db-assistant:escalated", {
+      bubbles: true,
+      composed: true,
+      detail: { ticketId: "test-ticket-123", source: "voice" }
+    }));
+  });
+  await expect(toast).toContainText("Human support requested");
+  await expect(toast).toContainText("ticket test-ticket-123");
+  await expect(toast).toContainText("voice");
+});
+
 test("lesson suggestions reflow on mobile and desktop without horizontal scrolling", async ({ page }) => {
   for (const viewport of [{ width: 320, height: 800 }, { width: 390, height: 844 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);

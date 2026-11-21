@@ -196,6 +196,10 @@ openapi.yaml         Checked-in API contract
 
 The component uses `lang`, `api`, `content`, `theme`, and `debug` attributes. The blank-host example is available at [demo/blank.html](./demo/blank.html).
 
+### Host-page event bridge
+
+For a host-managed text answer, listen for `db-assistant:question`, set `event.detail.hostHandled = true` synchronously, and dispatch `db-assistant:answer` on the same `<db-assistant>` element. Preserve the supplied `requestId` when returning `{ requestId, answer, language, sources, answerStatus }`. The component validates the returned answer, keeps source links and answer status, and falls back to its existing server/retrieval flow if the host does not claim the question, times out, or returns an error.
+
 ## API
 
 The complete contract is available in [openapi.yaml](./openapi.yaml) and in the local Swagger UI at `/docs`.
