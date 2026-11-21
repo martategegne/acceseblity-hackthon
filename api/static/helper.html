@@ -410,6 +410,7 @@
       keepOpenLabel.append(keepOpen, keepOpenText);
       const actions = document.createElement("div"); actions.className = "actions";
       const send = document.createElement("button"); send.type = "button"; send.textContent = "Send reply";
+      const close = document.createElement("button"); close.type = "button"; close.textContent = "Close ticket";
       const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Delete request";
       const feedback = document.createElement("p"); feedback.setAttribute("role", "status"); feedback.setAttribute("aria-live", "polite");
       send.addEventListener("click", async () => {
@@ -432,6 +433,17 @@
           }
         } catch (error) { feedback.textContent = error.message; send.disabled = false; }
       });
+      close.addEventListener("click", async () => {
+        if (!window.confirm("Close this ticket without sending a reply?")) return;
+        close.disabled = true;
+        try {
+          const response = await fetch(`/api/v1/escalations/${encodeURIComponent(ticket.ticketId)}/close`, {
+            method: "POST", headers: authHeaders()
+          });
+          if (!response.ok) throw new Error((await response.json()).detail || "Ticket could not be closed.");
+          closeScreenPeer(ticket.ticketId); item.remove(); status.textContent = "Ticket closed.";
+        } catch (error) { feedback.textContent = error.message; close.disabled = false; }
+      });
       remove.addEventListener("click", async () => {
         if (!window.confirm("Delete this request?")) return;
         try {
@@ -440,7 +452,7 @@
           closeScreenPeer(ticket.ticketId); item.remove(); status.textContent = "Request deleted.";
         } catch (error) { feedback.textContent = error.message; }
       });
-      actions.append(send, remove); item.append(label, box, keepOpenLabel, actions, feedback); return item;
+      actions.append(send, close, remove); item.append(label, box, keepOpenLabel, actions, feedback); return item;
     }
 
     document.getElementById("refresh").addEventListener("click", loadTickets);

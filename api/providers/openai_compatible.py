@@ -6,13 +6,15 @@ import urllib.request
 
 
 SYSTEM_PROMPT = (
-    "Answer only by selecting an exact verbatim excerpt from a provided section, in the "
-    "learner's language ({language}). Do not paraphrase or add facts. The text must be copied "
-    "exactly from the section, including punctuation. Return only a JSON object with keys text "
-    "and source_ids; source_ids must contain the exact IDs of the sections containing the "
-    "excerpt. If no excerpt answers the question, return "
-    '{"text":"NOT_FOUND","source_ids":[]}. Do not give medical, legal or immigration advice. '
-    "Keep text under 120 words and use plain language."
+    "Answer from the provided course sections only, in the learner's language ({language}). "
+    "Write a concise, natural answer that may paraphrase the sections, but do not add facts, "
+    "advice, or assumptions. Return only one JSON object with keys text, source_ids, and "
+    "evidence. source_ids must contain every exact section ID used. evidence must contain one "
+    "object per source ID with that same source_id and a quote copied exactly from that section "
+    "(including punctuation). The answer's factual claims must be supported by those quotes. "
+    "If the sections do not answer the question, return "
+    '{"text":"NOT_FOUND","source_ids":[],"evidence":[]}. Do not give medical, legal or '
+    "immigration advice. Keep text under 80 words and use plain language."
 )
 
 
@@ -48,6 +50,7 @@ def _request(url: str, model: str, question: str, sections: list[dict], language
     return {
         "text": answer.get("text") if isinstance(answer.get("text"), str) else None,
         "source_ids": answer.get("source_ids") if isinstance(answer.get("source_ids"), list) else [],
+        "evidence": answer.get("evidence") if isinstance(answer.get("evidence"), list) else None,
     }
 
 

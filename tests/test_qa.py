@@ -126,6 +126,28 @@ def test_provider_answer_only_returns_its_validated_citation(monkeypatch):
     assert result["answerStatus"] == "answered"
 
 
+def test_provider_can_smooth_a_grounded_answer_with_exact_evidence(monkeypatch):
+    monkeypatch.setenv("THRESHOLD", "0.1")
+    quote = SECTIONS[0]["text"]["en"]
+    provider = FakeProvider({
+        "text": "AI can save virtual assistants time by handling routine email and spreadsheet work.",
+        "source_ids": ["ai-va"],
+        "evidence": [{"source_id": "ai-va", "quote": quote}],
+    })
+
+    result = asyncio.run(
+        answer_question("How does artificial intelligence help virtual assistants?", "en", SECTIONS, provider)
+    )
+
+    assert result["mode"] == "ai"
+    assert result["answer"] == provider.result["text"]
+    assert result["sources"] == [{"title": SECTIONS[0]["title"], "url": "/lesson#ai-va"}]
+    assert result["grounding"]["method"] == "retrieval-grounded-model"
+    assert result["grounding"]["evidence"] == [{
+        "title": SECTIONS[0]["title"], "url": "/lesson#ai-va", "quote": quote,
+    }]
+
+
 @pytest.mark.parametrize("source_ids", [None, [], ["not-retrieved"]])
 def test_uncited_or_unknown_provider_sources_fall_back_to_retrieval(monkeypatch, source_ids):
     monkeypatch.setenv("THRESHOLD", "0.1")

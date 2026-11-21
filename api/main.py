@@ -2595,6 +2595,23 @@ def reply(ticket_id: str, payload: dict[str, Any], x_helper_token: str | None = 
     return {"message": "Reply saved.", "status": status}
 
 
+@app.post("/api/v1/escalations/{ticket_id}/close")
+def close_escalation(ticket_id: str, x_helper_token: str | None = Header(default=None)) -> dict[str, str]:
+    """Resolve a ticket without requiring a final learner-facing reply."""
+    helper_auth(x_helper_token)
+    with connect() as db:
+        purge_expired_tickets(db)
+        row = db.execute("SELECT status FROM escalations WHERE id=?", (ticket_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="We could not find that ticket.")
+        if row["status"] == "waiting":
+            db.execute(
+                "UPDATE escalations SET status='answered', replied_at=? WHERE id=?",
+                (datetime.now(timezone.utc).isoformat(), ticket_id),
+            )
+    return {"message": "Ticket closed.", "status": "answered"}
+
+
 @app.delete("/api/v1/escalations/{ticket_id}")
 def delete_escalation(ticket_id: str, x_helper_token: str | None = Header(default=None)) -> dict[str, str]:
     helper_auth(x_helper_token)

@@ -464,6 +464,45 @@ test("helper can send an interim update and later close the same ticket", async 
   }
 });
 
+test("helper can close a ticket without replying or delete it from the inbox", async ({ page, request }) => {
+  const createTicket = async (note) => {
+    const response = await request.post("/api/v1/escalations", {
+      data: { conversation: [], language: "en", page: "https://example.test/lesson", note }
+    });
+    expect(response.status()).toBe(201);
+    return response.json();
+  };
+  const closed = await createTicket("Close-only test");
+  const deleted = await createTicket("Delete-only test");
+  const helperHeaders = { "X-Helper-Token": "e2e-helper-token" };
+  try {
+    await page.goto("/helper");
+    await page.locator("#token").fill("e2e-helper-token");
+    await page.getByRole("button", { name: "Load waiting requests" }).click();
+
+    const closedTicket = page.locator(".ticket").filter({ hasText: closed.ticketId });
+    await expect(closedTicket).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await closedTicket.getByRole("button", { name: "Close ticket" }).click();
+    await expect(closedTicket).toHaveCount(0);
+    const closedStatus = await request.get(`/api/v1/escalations/${closed.ticketId}`, {
+      headers: { "X-Learner-Token": closed.accessToken }
+    });
+    expect(closedStatus.status()).toBe(200);
+    expect((await closedStatus.json()).status).toBe("answered");
+
+    const deletedTicket = page.locator(".ticket").filter({ hasText: deleted.ticketId });
+    await expect(deletedTicket).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await deletedTicket.getByRole("button", { name: "Delete request" }).click();
+    await expect(deletedTicket).toHaveCount(0);
+    expect((await request.get(`/api/v1/escalations/${deleted.ticketId}`)).status()).toBe(404);
+  } finally {
+    await request.delete(`/api/v1/escalations/${closed.ticketId}`, { headers: helperHeaders });
+    await request.delete(`/api/v1/escalations/${deleted.ticketId}`, { headers: helperHeaders });
+  }
+});
+
 test("course answers stay localized and linked across every supported learner language", async ({ page, request }) => {
   const section = sections[1];
   const pageErrors = [];

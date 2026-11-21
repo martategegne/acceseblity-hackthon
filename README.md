@@ -162,7 +162,7 @@ Calls use `VOICE_CALL_LANGUAGE` (default `en`) and the matching `VOICE_CALL_LOCA
 
 Browser speech recognition depends on the browser. Server-side Telegram voice notes and `POST /api/v1/voice/notes` need FFmpeg, the Python Vosk package, and a Vosk model configured as `VOICE_STT_MODEL_<LANG>`. Spoken read-back additionally needs Piper and `VOICE_TTS_MODEL_<LANG>` (plus its matching `.json` file). The default API image does not install these optional executables or download language models; provision them in the runtime image/environment first.
 
-For course answers, `AI_PROVIDER=none` uses local retrieval and needs no external AI credentials. `AI_PROVIDER=local` needs an Ollama-compatible server and model. `AI_PROVIDER=cloud` needs `CLOUD_URL`, `CLOUD_API_KEY`, and `CLOUD_MODEL`; the learner must explicitly consent before the assistant sends the question and matched course section to the configured cloud provider. SMS and voice call answers stay on local course retrieval.
+For course answers, `AI_PROVIDER=none` uses local retrieval and needs no external AI credentials. `AI_PROVIDER=local` needs an Ollama-compatible server and model. `AI_PROVIDER=cloud` needs `CLOUD_URL`, `CLOUD_API_KEY`, and `CLOUD_MODEL`; the learner must explicitly consent before the assistant sends the question and matched course section to the configured cloud provider. The optional model receives only above-threshold retrieved sections, must return source IDs plus exact evidence quotes, and is discarded when that evidence cannot be verified. Retrieval still decides when an answer is `not_found`, so model assistance cannot add citations to an unsupported question. SMS and voice call answers stay on local course retrieval.
 
 ### API
 
@@ -206,6 +206,7 @@ Key capabilities include:
 - `GET/POST /api/v1/content` — indexed content management.
 - `POST /api/v1/escalations` — consented tutor requests.
 - `GET /api/v1/escalations/{ticket_id}` — learner ticket status.
+- `POST /api/v1/escalations/{ticket_id}/close` and `DELETE /api/v1/escalations/{ticket_id}` — protected helper close/delete actions.
 - `GET /api/v1/helper/...` — protected helper operations and metrics.
 - `GET/POST /api/v1/voice/...` — localized voice guidance and offline actions.
 - `POST /api/v1/voice/notes` — transcribe an Amharic voice note, answer from the course, and return an optional local read-back WAV.

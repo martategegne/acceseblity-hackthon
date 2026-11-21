@@ -630,6 +630,28 @@ def test_learner_can_delete_only_their_ticket_data(client):
     assert client.get(f"/api/v1/escalations/{ticket_id}/data", headers={"X-Learner-Token": access_token}).status_code == 404
 
 
+def test_helper_can_close_a_ticket_without_sending_a_reply(client, monkeypatch):
+    monkeypatch.setenv("HELPER_TOKEN", "close-helper")
+    created = client.post(
+        "/api/v1/escalations",
+        json={"conversation": [], "language": "en", "page": "/lesson", "note": "Test ticket to close"},
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["ticketId"]
+    headers = {"X-Helper-Token": "close-helper"}
+
+    close = client.post(f"/api/v1/escalations/{ticket_id}/close", headers=headers)
+    assert close.status_code == 200
+    assert close.json() == {"message": "Ticket closed.", "status": "answered"}
+    assert client.get(f"/api/v1/escalations/{ticket_id}").status_code == 404
+    assert all(ticket["ticketId"] != ticket_id for ticket in client.get(
+        "/api/v1/escalations", headers=headers
+    ).json())
+
+    # Repeating close is safe for a helper retry.
+    assert client.post(f"/api/v1/escalations/{ticket_id}/close", headers=headers).json()["status"] == "answered"
+
+
 def test_expired_tickets_are_removed_before_the_helper_inbox_lists_them(client, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
