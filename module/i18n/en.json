@@ -197,6 +197,10 @@
     "sms_alert_first": "Send ALERT ON first to review the sender and cost information.",
     "sms_alert_enabled": "Job alerts are on from {sender}; carrier rates may apply. Reply ALERT OFF to stop.",
     "sms_alert_off": "Job alerts turned off.",
-    "sms_alert_sender_needed": "A sender number is needed to enable alerts."
+    "sms_alert_sender_needed": "A sender number is needed to enable alerts.",
+    "voice_call_prompt": "Please ask your course question.",
+    "voice_call_repeat": "I did not hear a question. Please try again.",
+    "voice_call_handoff": "Your tutor request is queued.",
+    "voice_call_next": "You can ask another course question."
   }
 }

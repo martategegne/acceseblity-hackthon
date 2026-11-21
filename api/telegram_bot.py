@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
 import time
 import urllib.error
@@ -42,9 +43,11 @@ from . import main as api_main  # noqa: E402
 from .main import (  # noqa: E402
     indexed_sections,
     notify_webhook,
+    record_course_gap_analytics,
     save_escalation_record,
 )
 from .qa import NOT_FOUND, answer_question  # noqa: E402
+from .voice import classify_command, local_provider  # noqa: E402
 
 logger = logging.getLogger("api.telegram_bot")
 
@@ -164,6 +167,9 @@ def source_link(url: str) -> str:
 def format_answer(result: dict[str, Any], language: str) -> str:
     answer = str(result.get("answer") or "").strip()
     sources = result.get("sources")
+    if result.get("answerStatus") in {"not_found", "off_topic", "refused"} and answer:
+        handoff = "/person"
+        return f"{answer}\n\nAsk a person with {handoff}."[:3900]
     if answer == NOT_FOUND or not isinstance(sources, list) or not sources:
         if language == "am":
             return "በዚህ ትምህርት ውስጥ ይህን አላገኘሁም። /person በመጠቀም ሰው ይጠይቁ።"
@@ -179,6 +185,67 @@ def format_answer(result: dict[str, Any], language: str) -> str:
     label = f"{title} — " if isinstance(title, str) and title else ""
     answer = answer[:3500]
     return f"{answer}\n\nSource: {label}{source_link(source['url'])}"
+
+
+def handle_voice(chat_id: int, audio: bytes, username: str | None = None) -> dict[str, Any]:
+    """Transcribe a Telegram voice note and optionally return a spoken answer."""
+    language = chat_language(chat_id)
+    try:
+        recognized = local_provider().transcribe(audio, language)
+    except Exception as error:
+        logger.warning("Could not transcribe Telegram voice note: %s", type(error).__name__)
+        message = (
+            "I could not process that voice note. Please try again or send a text question."
+            if language == "en"
+            else "የድምፅ መልዕክቱን ማስኬድ አልቻልኩም። እባክዎ እንደገና ይሞክሩ ወይም የጽሑፍ ጥያቄ ይላኩ።"
+        )
+        return {"text": message, "audio": None, "language": language, "transcript": ""}
+
+    transcript = str(recognized.get("transcript") or "").strip() if isinstance(recognized, dict) else ""
+    if not transcript:
+        message = (
+            "I could not hear a question. Please record the voice note again."
+            if language == "en"
+            else "ጥያቄ አልሰማሁም። እባክዎ የድምፅ መልዕክቱን እንደገና ይቅረጹ።"
+        )
+        return {"text": message, "audio": None, "language": language, "transcript": ""}
+
+    record_message(chat_id, "user", transcript)
+    command = classify_command(transcript, language)
+    if command["action"] == "request_tutor":
+        response = _person_reply(chat_id, language, username)
+        answer_text = response
+        result = {"answerStatus": "handoff", "answer": response, "sources": []}
+    elif command["action"] == "check_tutor_reply":
+        response = (
+            "Send /status and the 8-character code from your tutor request."
+            if language == "en"
+            else "ከአስተማሪ ጥያቄዎ የተሰጠውን 8 ፊደል ኮድ ከ/status ጋር ይላኩ።"
+        )
+        answer_text = response
+        result = {"answerStatus": "handoff", "answer": response, "sources": []}
+    else:
+        result = asyncio.run(
+            answer_question(
+                transcript,
+                language,
+                indexed_sections(),
+                allow_cloud=False,
+                offline_only=api_main.offline_mode(),
+            )
+        )
+        record_course_gap_analytics(transcript, language, indexed_sections(), result)
+        response = format_answer(result, language)
+        answer_text = str(result.get("answer") or response)
+
+    record_message(chat_id, "assistant", response)
+    try:
+        spoken = local_provider().synthesize(answer_text[:3500], language)
+        audio_reply = spoken if isinstance(spoken, bytes) and spoken else None
+    except Exception as error:
+        logger.info("Telegram voice read-back unavailable for %s: %s", language, type(error).__name__)
+        audio_reply = None
+    return {"text": response, "audio": audio_reply, "language": language, "transcript": transcript, "result": result}
 
 
 @lru_cache(maxsize=6)
@@ -328,7 +395,9 @@ def handle_text(chat_id: int, text: str, username: str | None = None) -> str:
     if not question or len(question) > 4000:
         return "Please send a question of 1 to 4000 characters."
     record_message(chat_id, "user", question)
-    result = asyncio.run(answer_question(question, language, indexed_sections(), allow_cloud=False, offline_only=api_main.offline_mode()))
+    sections = indexed_sections()
+    result = asyncio.run(answer_question(question, language, sections, allow_cloud=False, offline_only=api_main.offline_mode()))
+    record_course_gap_analytics(question, language, sections, result)
     response = format_answer(result, language)
     record_message(chat_id, "assistant", response)
     return response
@@ -354,6 +423,50 @@ def telegram_call(token: str, method: str, payload: dict[str, Any]) -> Any:
     return result.get("result")
 
 
+def download_telegram_file(token: str, file_path: str) -> bytes:
+    """Download a Telegram voice note with a bounded in-memory buffer."""
+    if not isinstance(file_path, str) or not file_path or len(file_path) > 1000:
+        raise RuntimeError("Telegram returned an invalid audio path.")
+    request = urllib.request.Request(f"https://api.telegram.org/file/bot{token}/{file_path}", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=40) as response:
+            data = response.read(8_000_001)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise RuntimeError("Telegram voice note download failed.") from None
+    if not data or len(data) > 8_000_000:
+        raise RuntimeError("Telegram voice note is empty or too large.")
+    return data
+
+
+def telegram_upload_voice(token: str, chat_id: int, audio: bytes) -> None:
+    """Send a generated WAV through Telegram's multipart sendVoice endpoint."""
+    if not isinstance(audio, bytes) or not audio or len(audio) > 8_000_000:
+        return
+    boundary = f"----dbassistant{secrets.token_hex(12)}"
+    prefix = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+        f"{chat_id}\r\n"
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="voice"; filename="answer.wav"\r\n'
+        "Content-Type: audio/wav\r\n\r\n"
+    ).encode("utf-8")
+    body = prefix + audio + f"\r\n--{boundary}--\r\n".encode("ascii")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendVoice",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=40) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        raise RuntimeError("Telegram voice reply failed.") from None
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise RuntimeError("Telegram voice reply was rejected.")
+
+
 def next_offset() -> int | None:
     with api_main.connect() as db:
         row = db.execute(
@@ -373,15 +486,31 @@ def save_offset(offset: int) -> None:
 
 def process_update(update: dict[str, Any], token: str) -> None:
     message = update.get("message")
-    if not isinstance(message, dict) or not isinstance(message.get("text"), str):
+    if not isinstance(message, dict):
         return
     chat = message.get("chat")
     if not isinstance(chat, dict) or not isinstance(chat.get("id"), int):
         return
     sender = message.get("from")
     username = sender.get("username") if isinstance(sender, dict) else None
-    response = handle_text(chat["id"], message["text"], username)
-    telegram_call(token, "sendMessage", {"chat_id": chat["id"], "text": response[:4000]})
+    if isinstance(message.get("text"), str):
+        response = handle_text(chat["id"], message["text"], username)
+        telegram_call(token, "sendMessage", {"chat_id": chat["id"], "text": response[:4000]})
+        return
+
+    voice_message = message.get("voice") or message.get("audio")
+    if not isinstance(voice_message, dict) or not isinstance(voice_message.get("file_id"), str):
+        return
+    file_info = telegram_call(token, "getFile", {"file_id": voice_message["file_id"]})
+    if not isinstance(file_info, dict) or not isinstance(file_info.get("file_path"), str):
+        raise RuntimeError("Telegram did not return a voice-note path.")
+    result = handle_voice(chat["id"], download_telegram_file(token, file_info["file_path"]), username)
+    telegram_call(token, "sendMessage", {"chat_id": chat["id"], "text": result["text"][:4000]})
+    if result.get("audio"):
+        try:
+            telegram_upload_voice(token, chat["id"], result["audio"])
+        except RuntimeError as error:
+            logger.warning("Could not send Telegram voice read-back: %s", error)
 
 
 def run() -> None:

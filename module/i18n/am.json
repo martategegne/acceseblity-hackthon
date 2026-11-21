@@ -220,6 +220,10 @@
     "sms_alert_first": "የላኪውንና የወጪ መረጃውን ለማየት መጀመሪያ ALERT ON ይላኩ።",
     "sms_alert_enabled": "የሥራ ማሳወቂያዎች ከ{sender} እየመጡ ነው፤ ክፍያ ሊኖር ይችላል። ለማቆም ALERT OFF ይላኩ።",
     "sms_alert_off": "የሥራ ማሳወቂያዎች ጠፍተዋል።",
-    "sms_alert_sender_needed": "ማሳወቂያዎችን ለማብራት የላኪ ቁጥር ያስፈልጋል።"
+    "sms_alert_sender_needed": "ማሳወቂያዎችን ለማብራት የላኪ ቁጥር ያስፈልጋል።",
+    "voice_call_prompt": "እባክዎ የትምህርት ጥያቄዎን ይናገሩ።",
+    "voice_call_repeat": "ጥያቄ አልሰማሁም። እባክዎ እንደገና ይሞክሩ።",
+    "voice_call_handoff": "የአስተማሪ ጥያቄዎ ተመዝግቧል።",
+    "voice_call_next": "ሌላ የትምህርት ጥያቄ መጠየቅ ይችላሉ።"
   }
 }

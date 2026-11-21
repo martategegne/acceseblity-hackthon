@@ -5,6 +5,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import logging
@@ -55,6 +56,11 @@ _RATE_LIMIT_PATHS = {
     "/sms/inbound": "sms",
     "/api/v1/voice/commands": "voice",
     "/api/v1/voice/actions/sync": "voice",
+    "/api/v1/voice/notes": "voice",
+    "/voice/inbound": "voice",
+    "/voice/answer": "voice",
+    "/api/v1/voice/call/inbound": "voice",
+    "/api/v1/voice/call/answer": "voice",
 }
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,100}$")
 _HANDOFF_BRIEF_VERSION = 1
@@ -1407,6 +1413,231 @@ async def post_voice_command(request: Request, idempotency_key: str | None = Hea
     raise HTTPException(status_code=415, detail="Send JSON transcript input or an audio/* recording.")
 
 
+def _voice_channel_language(value: Any, default: str = "am") -> str:
+    """Normalize provider locale values such as ``am-ET`` to our locale IDs."""
+    candidate = value if isinstance(value, str) and value.strip() else default
+    language = candidate.strip().lower().replace("_", "-").split("-", 1)[0]
+    if language not in VOICE_LANGUAGES:
+        plain_bad("Language must be en, am, om, ti, so, or ar.")
+    return language
+
+
+async def _read_voice_note(request: Request, language: str) -> tuple[bytes, str, str]:
+    """Read a provider voice note without requiring python-multipart."""
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("application/json"):
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > 12_000_000:
+            plain_bad("Voice note JSON must be smaller than 12 MB.")
+        try:
+            payload = await request.json()
+        except Exception:
+            plain_bad("Send valid JSON.")
+        if not isinstance(payload, dict):
+            plain_bad("Send a JSON object.")
+        language = _voice_channel_language(payload.get("language"), language)
+        mime_type = payload.get("audioMimeType", "audio/webm")
+        return _decode_voice_audio(payload.get("audioDataUrl"), mime_type), mime_type, language
+
+    if content_type.startswith("audio/"):
+        if len(content_type) > 80 or ";" in content_type:
+            mime_type = content_type.split(";", 1)[0].strip()
+        else:
+            mime_type = content_type
+        if mime_type not in {"audio/webm", "audio/ogg", "audio/opus", "audio/wav", "audio/mpeg", "audio/mp4"}:
+            raise HTTPException(status_code=415, detail="Send a supported audio recording.")
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > 8_000_000:
+            plain_bad("Audio must be between 1 byte and 8 MB.")
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > 8_000_000:
+                plain_bad("Audio must be between 1 byte and 8 MB.")
+        if not chunks:
+            plain_bad("Audio must be between 1 byte and 8 MB.")
+        return bytes(chunks), mime_type, _voice_channel_language(request.query_params.get("language"), language)
+
+    raise HTTPException(status_code=415, detail="Send JSON audioDataUrl or an audio/* voice note.")
+
+
+async def _answer_voice_channel(
+    transcript: str,
+    language: str,
+    *,
+    confidence: Any = None,
+    channel: str,
+) -> dict[str, Any]:
+    """Answer a voice note using the same retrieval and handoff path as web/SMS."""
+    if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 4000:
+        plain_bad("Provide a transcript of 1 to 4000 characters.", language, "error_voice_transcript")
+    transcript = transcript.strip()
+    if confidence is not None:
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            plain_bad("Confidence must be between 0 and 1.", language, "error_voice_confidence")
+        if not 0 <= confidence <= 1:
+            plain_bad("Confidence must be between 0 and 1.", language, "error_voice_confidence")
+        if confidence < 0.35:
+            spoken = api_message(language, "voice_low_confidence", "I could not understand that clearly. Please repeat it.")
+            return {
+                "channel": channel,
+                "language": language,
+                "transcript": transcript,
+                "confidence": confidence,
+                "status": "clarification_required",
+                "answerText": spoken,
+                "answer": spoken,
+                "answerStatus": "clarification_required",
+                "sources": [],
+                "audio": await _synthesize_voice_response(spoken, language),
+            }
+
+    sections = indexed_sections()
+    result = await answer_question(transcript, language, sections, allow_cloud=False, offline_only=offline_mode())
+    record_course_gap_analytics(transcript, language, sections, result)
+    answer_text = str(result.get("answer") or "").strip()
+    if result.get("answerStatus") in {"not_found", "off_topic", "refused"}:
+        handoff = api_message(language, "sms_person_instruction", "To ask a tutor, say PERSON.")
+        if handoff and handoff not in answer_text:
+            answer_text = f"{answer_text} {handoff}".strip()
+    return {
+        "channel": channel,
+        "language": language,
+        "transcript": transcript,
+        "confidence": confidence,
+        "status": result.get("answerStatus", "answered"),
+        "answerText": answer_text,
+        "audio": await _synthesize_voice_response(answer_text, language),
+        **result,
+    }
+
+
+async def _synthesize_voice_response(text: str, language: str) -> dict[str, str] | None:
+    """Return an inline WAV when a local TTS model is configured; keep text usable otherwise."""
+    try:
+        audio = await run_in_threadpool(local_provider().synthesize, text[:4000], language)
+    except Exception as error:  # TTS is optional; transcription and text answers remain usable.
+        logger.info("Voice read-back unavailable for %s: %s", language, type(error).__name__)
+        return None
+    if not isinstance(audio, bytes) or not audio:
+        return None
+    return {
+        "mimeType": "audio/wav",
+        "dataUrl": "data:audio/wav;base64," + base64.b64encode(audio).decode("ascii"),
+    }
+
+
+@app.post("/api/v1/voice/notes")
+async def post_voice_note(request: Request) -> dict[str, Any]:
+    """Transcribe an Amharic voice note, answer it, and optionally return a read-back WAV."""
+    audio, _mime_type, language = await _read_voice_note(request, "am")
+    recognized = await run_in_threadpool(local_provider().transcribe, audio, language)
+    if not isinstance(recognized, dict):
+        raise HTTPException(status_code=503, detail="The local speech engine returned no transcription.")
+    return await _answer_voice_channel(
+        recognized.get("transcript", ""),
+        language,
+        confidence=recognized.get("confidence"),
+        channel="voice-note",
+    )
+
+
+def _voice_call_locale(language: str) -> str:
+    return os.getenv(f"VOICE_CALL_LOCALE_{language.upper()}", {"am": "am-ET"}.get(language, f"{language}-{language.upper()}"))
+
+
+def _voice_call_say(text: str, language: str) -> str:
+    locale = html.escape(_voice_call_locale(language), quote=True)
+    voice = os.getenv(f"VOICE_CALL_VOICE_{language.upper()}", "").strip()
+    voice_attribute = f' voice="{html.escape(voice, quote=True)}"' if voice else ""
+    return f'<Say language="{locale}"{voice_attribute}>{html.escape(text[:3500])}</Say>'
+
+
+def _voice_call_gather(language: str, prompt: str) -> str:
+    action = html.escape(os.getenv("VOICE_CALL_ANSWER_URL", "/voice/answer"), quote=True)
+    return (
+        f'<Gather input="speech" action="{action}" method="POST" '
+        f'language="{html.escape(_voice_call_locale(language), quote=True)}" speechTimeout="auto">'
+        f"{_voice_call_say(prompt, language)}</Gather>"
+    )
+
+
+def _voice_call_response(body: str) -> Response:
+    return Response(content=f'<?xml version="1.0" encoding="UTF-8"?><Response>{body}</Response>', media_type="application/xml")
+
+
+async def _read_voice_call_fields(request: Request) -> dict[str, str]:
+    content_type = request.headers.get("content-type", "").lower()
+    raw = await request.body()
+    if content_type.startswith("application/json"):
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, ValueError):
+            plain_bad("Send valid voice-call data.")
+        return {str(key): str(value) for key, value in payload.items()} if isinstance(payload, dict) else {}
+    values = urllib.parse.parse_qs(raw.decode("utf-8", errors="replace"), keep_blank_values=True)
+    return {key: entries[-1] for key, entries in values.items() if entries}
+
+
+def _save_voice_call_handoff(transcript: str, language: str, caller: str) -> tuple[str, str]:
+    caller_hash = hash_phone(caller) or hashlib.sha256(b"anonymous-voice-caller").hexdigest()
+    conversation = [{"role": "user", "text": transcript}]
+    ticket_id = save_escalation_record(
+        conversation,
+        language,
+        f"voice-call:{caller_hash}",
+        "Voice call tutor request",
+        handoff_reason="learner_requested_person",
+    )
+    notify_webhook(ticket_id)
+    return ticket_id, ticket_id.replace("-", "")[-8:].upper()
+
+
+@app.post("/voice/inbound", response_class=Response)
+@app.post("/api/v1/voice/call/inbound", response_class=Response)
+async def voice_call_inbound() -> Response:
+    """Provider-neutral/TwiML-compatible entry point for a spoken Amharic question."""
+    language = _voice_channel_language(os.getenv("VOICE_CALL_LANGUAGE", "am"))
+    prompt = api_message(language, "voice_call_prompt", "Please ask your course question.")
+    return _voice_call_response(_voice_call_gather(language, prompt))
+
+
+@app.post("/voice/answer", response_class=Response)
+@app.post("/api/v1/voice/call/answer", response_class=Response)
+async def voice_call_answer(request: Request) -> Response:
+    fields = await _read_voice_call_fields(request)
+    language = _voice_channel_language(fields.get("Language") or fields.get("language"), os.getenv("VOICE_CALL_LANGUAGE", "am"))
+    transcript = fields.get("SpeechResult") or fields.get("speechResult") or fields.get("transcript") or ""
+    confidence = fields.get("Confidence") or fields.get("confidence")
+    if confidence:
+        try:
+            if float(confidence) < 0.35:
+                return _voice_call_response(_voice_call_gather(
+                    language,
+                    api_message(language, "voice_low_confidence", "I could not understand that clearly. Please repeat it."),
+                ))
+        except ValueError:
+            confidence = None
+    if not transcript.strip():
+        return _voice_call_response(_voice_call_gather(
+            language,
+            api_message(language, "voice_call_repeat", "I did not hear a question. Please try again."),
+        ))
+
+    command = classify_command(transcript, language)
+    if command["action"] == "request_tutor":
+        _ticket_id, reference = _save_voice_call_handoff(transcript, language, fields.get("From", ""))
+        message = api_message(language, "voice_call_handoff", "Your tutor request is queued.")
+        message = f"{message} Reference {reference}."
+        return _voice_call_response(_voice_call_say(message, language))
+
+    result = await _answer_voice_channel(transcript, language, confidence=confidence, channel="voice-call")
+    follow_up = _voice_call_gather(language, api_message(language, "voice_call_next", "You can ask another course question."))
+    return _voice_call_response(_voice_call_say(result["answerText"], language) + follow_up)
+
+
 @app.post("/api/v1/voice/actions/sync")
 async def sync_voice_actions(payload: dict[str, Any]) -> dict[str, Any]:
     actions = payload.get("actions")
@@ -1539,7 +1770,8 @@ def helper_course_gap_radar(x_helper_token: str | None = Header(default=None)) -
             db.execute("DELETE FROM course_gap_aggregates")
         return {
             "period": "last_30_days", "retentionDays": 0, "minimumVisibleCount": GAP_REPORT_MINIMUM,
-            "hasActivity": False, "byLanguage": [], "topAnsweredTopics": [], "notFoundCandidates": [],
+            "hasActivity": False, "byLanguage": [], "mostAskedQuestions": [], "unansweredQuestions": [],
+            "topAnsweredTopics": [], "notFoundCandidates": [],
             "message": "Course gap analytics are disabled by COURSE_GAP_RETENTION_DAYS=0.",
         }
 
@@ -1566,6 +1798,9 @@ def helper_course_gap_radar(x_helper_token: str | None = Header(default=None)) -
             section_titles[section["id"]] = str(titles.get("en") or section.get("title") or section["id"])
 
     by_language: dict[str, dict[str, int]] = {language: {status: 0 for status in GAP_OUTCOMES} for language in TRACK_GAP_LANGUAGES}
+    asked_topics: dict[str, int] = defaultdict(int)
+    asked_answered: dict[str, int] = defaultdict(int)
+    asked_not_found: dict[str, int] = defaultdict(int)
     answered_topics: dict[str, int] = defaultdict(int)
     not_found_candidates: dict[str, int] = defaultdict(int)
     for row in rows:
@@ -1573,6 +1808,12 @@ def helper_course_gap_radar(x_helper_token: str | None = Header(default=None)) -
         if language not in by_language or outcome not in GAP_OUTCOMES:
             continue
         by_language[language][outcome] += count
+        if topic_id not in {GAP_NO_TOPIC, GAP_NON_LESSON} and outcome in {"answered", "not_found"}:
+            asked_topics[topic_id] += count
+            if outcome == "answered":
+                asked_answered[topic_id] += count
+            else:
+                asked_not_found[topic_id] += count
         if outcome == "answered" and topic_id not in {GAP_NO_TOPIC, GAP_NON_LESSON}:
             answered_topics[topic_id] += count
         if outcome == "not_found" and topic_id not in {GAP_NO_TOPIC, GAP_NON_LESSON}:
@@ -1598,17 +1839,41 @@ def helper_course_gap_radar(x_helper_token: str | None = Header(default=None)) -
             if count >= GAP_REPORT_MINIMUM
         ][:10]
 
+    most_asked = [
+        {
+            "topicId": topic_id,
+            "title": section_titles.get(topic_id, topic_id),
+            "count": count,
+            "answered": asked_answered.get(topic_id, 0),
+            "notFound": asked_not_found.get(topic_id, 0),
+        }
+        for topic_id, count in sorted(asked_topics.items(), key=lambda item: (-item[1], item[0]))
+        if count >= GAP_REPORT_MINIMUM
+    ][:10]
+    unanswered = topic_rows(not_found_candidates, candidate_only=True)
+    unmatched = sum(
+        int(row["count"]) for row in rows
+        if row["outcome"] == "not_found" and row["topic_id"] == GAP_NO_TOPIC
+    )
+    if unmatched >= GAP_REPORT_MINIMUM:
+        unanswered.append({
+            "topicId": GAP_NO_TOPIC,
+            "title": "No matching course area",
+            "count": unmatched,
+            "candidateOnly": True,
+        })
+
     return {
         "period": "last_30_days",
         "retentionDays": retention_days,
         "minimumVisibleCount": GAP_REPORT_MINIMUM,
         "hasActivity": bool(rows),
         "byLanguage": outcome_totals,
+        "mostAskedQuestions": most_asked,
+        "unansweredQuestions": unanswered[:10],
         "topAnsweredTopics": topic_rows(answered_topics),
         "notFoundCandidates": topic_rows(not_found_candidates, candidate_only=True),
-        "unmatchedNotFoundCount": _report_count(sum(
-            int(row["count"]) for row in rows if row["outcome"] == "not_found" and row["topic_id"] == GAP_NO_TOPIC
-        )),
+        "unmatchedNotFoundCount": _report_count(unmatched),
     }
 
 

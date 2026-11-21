@@ -85,6 +85,51 @@ def test_regular_message_uses_shared_answer_pipeline(monkeypatch, tmp_path):
     assert response.endswith("lesson.html#work")
 
 
+def test_amharic_voice_note_uses_shared_answer_and_tutor_commands(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "bot.sqlite3")
+    telegram_bot.initialize_storage()
+    telegram_bot.set_chat_language(123, "am")
+
+    class FakeVoice:
+        def transcribe(self, audio, language):
+            assert audio == b"voice-note"
+            assert language == "am"
+            return {"transcript": "የቨርቹዋል አሲስታንት ሥራ ምንድነው?", "confidence": 0.94}
+
+        def synthesize(self, text, language):
+            assert language == "am"
+            return b"wav-answer"
+
+    monkeypatch.setattr(telegram_bot, "local_provider", FakeVoice)
+
+    async def answer_question(question, language, sections, **kwargs):
+        assert language == "am"
+        return {
+            "answer": "የኮርሱ መልስ።",
+            "answerStatus": "answered",
+            "sources": [{"title": "ሥራ", "url": "lesson.html#work"}],
+        }
+
+    monkeypatch.setattr(telegram_bot, "answer_question", answer_question)
+    result = telegram_bot.handle_voice(123, b"voice-note")
+    assert result["transcript"].startswith("የቨርቹዋል")
+    assert "የኮርሱ መልስ" in result["text"]
+    assert result["audio"] == b"wav-answer"
+
+    monkeypatch.setattr(
+        telegram_bot,
+        "local_provider",
+        lambda: type("NoVoice", (), {
+            "transcribe": lambda self, audio, language: {"transcript": "አስተማሪ ጠይቅ", "confidence": 0.9},
+            "synthesize": lambda self, text, language: b"handoff-audio",
+        })(),
+    )
+    handoff = telegram_bot.handle_voice(123, b"voice-note")
+    assert "ጥያቄ" in handoff["text"] or "ተመዝግቧል" in handoff["text"]
+    with main.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM escalations").fetchone()[0] == 1
+
+
 def test_answers_include_absolute_source_and_not_found_offers_person(monkeypatch):
     result = {
         "answer": "Use a clear process.",

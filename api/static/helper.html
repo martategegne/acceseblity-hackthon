@@ -80,7 +80,7 @@
     <p id="status" role="status" aria-live="polite"></p>
     <section class="radar" aria-labelledby="radar-heading">
       <h2 id="radar-heading">Teacher Course Gap Radar</h2>
-      <p class="radar-intro" id="radar-description">Review anonymous course-question outcomes from the last 30 days. Only grouped counts are stored; prompts and learner identities are not collected for this report. Counts below three are hidden.</p>
+      <p class="radar-intro" id="radar-description">Review which course questions learners ask most and which questions the course cannot answer. Only grouped counts are stored; raw prompts and learner identities are not collected for this report. Counts below three are hidden.</p>
       <div class="radar-toolbar">
         <button type="button" id="radar-refresh" aria-describedby="radar-description">Load course gap report</button>
         <span>Requires the helper token above.</span>
@@ -98,13 +98,13 @@
           </div>
         </section>
         <section aria-labelledby="radar-topics-heading">
-          <h3 id="radar-topics-heading">Most answered lesson topics</h3>
-          <div class="radar-table-wrap"><table class="radar-table"><caption>Only grounded answers linked to a lesson are counted.</caption><thead><tr><th scope="col">Lesson topic</th><th scope="col">Answered questions</th></tr></thead><tbody id="radar-topics-body"></tbody></table></div>
+          <h3 id="radar-topics-heading">Most asked course questions</h3>
+          <div class="radar-table-wrap"><table class="radar-table"><caption>Grouped by the lesson area matched by retrieval; no learner wording is stored.</caption><thead><tr><th scope="col">Course area</th><th scope="col">Questions</th><th scope="col">Answered</th><th scope="col">Not found</th></tr></thead><tbody id="radar-topics-body"></tbody></table></div>
           <p class="radar-empty" id="radar-topics-empty" hidden>No lesson topic has enough activity to display yet. Counts below three are hidden.</p>
         </section>
         <section aria-labelledby="radar-gaps-heading">
-          <h3 id="radar-gaps-heading">Closest lesson candidates for “not found” questions</h3>
-          <p class="radar-note">These are unverified retrieval candidates below the answer threshold. They are not confirmed topics, answers, or citations; use them only as a prompt to review course coverage.</p>
+          <h3 id="radar-gaps-heading">Questions the course could not answer</h3>
+          <p class="radar-note">These are unverified retrieval candidates below the answer threshold. They are not confirmed topics, answers, or citations; use them only as a prompt to improve course coverage.</p>
           <div class="radar-table-wrap"><table class="radar-table"><caption>Counts below three are hidden. Off-topic and safety-refusal questions do not get a lesson candidate.</caption><thead><tr><th scope="col">Possible lesson to review</th><th scope="col">Not-found candidates</th></tr></thead><tbody id="radar-gaps-body"></tbody></table></div>
           <p class="radar-empty" id="radar-gaps-empty" hidden>No lesson candidate has enough not-found activity to display.</p>
           <p class="radar-note" id="radar-unmatched-note" hidden></p>
@@ -278,6 +278,19 @@
       }
     }
 
+    function renderAskedRows(body, items, empty) {
+      body.replaceChildren();
+      empty.hidden = items.length > 0;
+      for (const topic of items) {
+        const row = document.createElement("tr");
+        addRadarCell(row, topic.title || topic.topicId);
+        addRadarCell(row, String(topic.count));
+        addRadarCell(row, String(topic.answered ?? topic.count));
+        addRadarCell(row, String(topic.notFound ?? 0));
+        body.append(row);
+      }
+    }
+
     async function loadCourseGapRadar() {
       const button = document.getElementById("radar-refresh");
       const languageBody = document.getElementById("radar-language-body");
@@ -301,8 +314,16 @@
           addRadarCell(row, visibleCount(entry.outcomes.refused));
           languageBody.append(row);
         }
-        renderTopicRows(topicsBody, report.topAnsweredTopics || [], document.getElementById("radar-topics-empty"));
-        renderTopicRows(gapsBody, report.notFoundCandidates || [], document.getElementById("radar-gaps-empty"));
+        renderAskedRows(
+          topicsBody,
+          report.mostAskedQuestions || report.topAnsweredTopics || [],
+          document.getElementById("radar-topics-empty"),
+        );
+        renderTopicRows(
+          gapsBody,
+          report.unansweredQuestions || report.notFoundCandidates || [],
+          document.getElementById("radar-gaps-empty"),
+        );
         const unmatched = document.getElementById("radar-unmatched-note");
         const unmatchedCount = report.unmatchedNotFoundCount;
         unmatched.hidden = !unmatchedCount || (unmatchedCount.count === 0 && !unmatchedCount.suppressed);

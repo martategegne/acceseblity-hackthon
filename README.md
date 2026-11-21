@@ -147,7 +147,10 @@ Key capabilities include:
 - `GET /api/v1/escalations/{ticket_id}` — learner ticket status.
 - `GET /api/v1/helper/...` — protected helper operations and metrics.
 - `GET/POST /api/v1/voice/...` — localized voice guidance and offline actions.
+- `POST /api/v1/voice/notes` — transcribe an Amharic voice note, answer from the course, and return an optional local read-back WAV.
+- `POST /voice/inbound` and `/voice/answer` — provider-facing call webhooks that gather spoken Amharic questions, read answers back, and send “person” requests to the same tutor inbox.
 - `/sms/inbound` — JSON SMS simulator for demo flows.
+- The Telegram polling bot accepts text and voice notes. `/lang am`, voice-note questions, `/person`, and tutor status all use the same course answer and handoff path as SMS.
 
 Only answers supported by indexed evidence include source links. The API distinguishes evidenced answers, in-scope questions not found in the course, off-topic questions, and sensitive-topic refusals. Unsupported answers do not receive fabricated citations. The tested off-topic response explains the course boundary and offers an accessible **Talk to a person** action. `/sms/inbound` is an HTTP simulator; it does not deliver carrier SMS.
 

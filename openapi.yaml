@@ -199,6 +199,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/voice/notes:
+    post:
+      summary: Post Voice Note
+      description: Transcribe an Amharic voice note, answer it, and optionally
+        return a read-back WAV.
+      operationId: post_voice_note_api_v1_voice_notes_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Post Voice Note Api V1 Voice Notes Post
+  /api/v1/voice/call/inbound:
+    post:
+      summary: Voice Call Inbound
+      description: Provider-neutral/TwiML-compatible entry point for a spoken
+        Amharic question.
+      operationId: voice_call_inbound_api_v1_voice_call_inbound_post
+      responses:
+        '200':
+          description: Successful Response
+  /voice/inbound:
+    post:
+      summary: Voice Call Inbound
+      description: Provider-neutral/TwiML-compatible entry point for a spoken
+        Amharic question.
+      operationId: voice_call_inbound_voice_inbound_post
+      responses:
+        '200':
+          description: Successful Response
+  /api/v1/voice/call/answer:
+    post:
+      summary: Voice Call Answer
+      operationId: voice_call_answer_api_v1_voice_call_answer_post
+      responses:
+        '200':
+          description: Successful Response
+  /voice/answer:
+    post:
+      summary: Voice Call Answer
+      operationId: voice_call_answer_voice_answer_post
+      responses:
+        '200':
+          description: Successful Response
   /api/v1/voice/actions/sync:
     post:
       summary: Sync Voice Actions
