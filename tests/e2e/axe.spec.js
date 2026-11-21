@@ -55,6 +55,8 @@ test("axe: answer actions and lesson citation", async ({ page }) => {
   await expect(answer.locator(".copy-answer")).toBeVisible();
   await expect(answer.locator(".listen-button")).toBeVisible();
   await expect(answer.locator(".course-link")).toBeVisible();
+  await expect(answer.locator(".course-link")).toHaveAttribute("aria-label", /Source:/);
+  await expect(assistant.locator("#assistant-announcer")).toHaveAttribute("aria-live", "polite");
 
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])

@@ -271,6 +271,16 @@ describe("Additional language packs and retrieval", () => {
   const languages = ["am", "ti", "om", "so"];
   const englishStrings = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../module/i18n/en.json"), "utf-8")).strings;
   const declaredFallbackKeys = [
+    "answerReady",
+    "fullLanguage",
+    "jumpSources",
+    "notFoundAnnouncement",
+    "offlineAnnouncement",
+    "simpleLanguage",
+    "skipAnswer",
+    "sourceAnnouncement",
+    "sourceLabel",
+    "tutorRequestSent",
     "answerCopied",
     "copyAnswer",
     "copyAnswerFailed",

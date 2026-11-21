@@ -533,6 +533,10 @@
       .lesson-explore-fallback, .lesson-explore-status { padding: 8px 10px; border-radius: 9px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); font-size: .9em; }
       .lesson-explore-fallback { border-inline-start: 3px solid var(--guide-accent); }
       .lesson-explore-retry { justify-self: start; }
+      .answer-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
+      .skip-link { position: absolute; inset-inline-start: -9999px; padding: 8px 10px; border-radius: 8px; background: var(--guide-surface); color: var(--assistant-foreground, var(--guide-ink)); }
+      .skip-link:focus { position: static; outline: 3px solid var(--assistant-focus, #0f766e); outline-offset: 2px; }
+      #latest-answer:focus { outline: 3px solid var(--assistant-focus, #0f766e); outline-offset: 4px; }
       .offline-queue[hidden] { display: none; }
       .offline-queue h3, .queue-question { margin: 0; overflow-wrap: anywhere; }
       .offline-queue h3 { font-size: 1rem; }
@@ -664,10 +668,14 @@
                 </select>
               </div>
               <p id="locale-status" role="status" aria-live="polite" hidden></p>
+              <nav class="answer-navigation" aria-label="Answer navigation">
+                <a id="skip-answer" class="skip-link" href="#latest-answer"></a>
+                <a id="jump-sources" class="skip-link" href="#answer-sources"></a>
+              </nav>
             </div>
             <section class="conversation-region" aria-label="Conversation">
               <p id="greeting" dir="auto"></p>
-              <div class="log" id="messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+              <div class="log" id="messages" role="log" aria-relevant="additions"></div>
             </section>
             <section class="study-pack" id="study-pack" aria-labelledby="study-pack-heading" hidden>
               <h3 id="study-pack-heading" tabindex="-1"></h3>
@@ -681,7 +689,7 @@
             </section>
             <p class="queue-live-status" id="offline-queue-status" role="status" aria-live="polite" aria-atomic="true"></p>
             <details class="lesson-explore" id="lesson-explore" aria-busy="true">
-              <summary class="lesson-explore-summary">
+              <summary class="lesson-explore-summary" aria-expanded="false">
                 <span class="lesson-explore-heading" id="lesson-explore-heading" role="heading" aria-level="3"></span>
                 <span class="lesson-explore-chevron" aria-hidden="true"></span>
               </summary>
@@ -805,7 +813,7 @@
         accommodationOpen: $("accommodation-open"),
         languageLabel: $("language-label"),
         languageSelect: $("language-select"),
-        localeStatus: $("locale-status"),
+        localeStatus: $("locale-status"), skipAnswer: $("skip-answer"), jumpSources: $("jump-sources"),
         greeting: $("greeting"),
         log: $("messages"),
         studyPack: $("study-pack"), studyPackHeading: $("study-pack-heading"),
@@ -814,7 +822,7 @@
         questionQueueHeading: $("offline-queue-heading"),
         questionQueueList: $("offline-queue-list"),
         questionQueueStatus: $("offline-queue-status"),
-        lessonExplore: $("lesson-explore"),
+        lessonExplore: $("lesson-explore"), lessonExploreSummary: $("lesson-explore").querySelector("summary"),
         lessonExploreHeading: $("lesson-explore-heading"),
         lessonExploreDescription: $("lesson-explore-description"),
         lessonExploreFallback: $("lesson-explore-fallback"),
@@ -858,6 +866,8 @@
       this._els.screenContextStart.hidden = screenCaptureAvailable;
       this._els.screenScreenshotLabel.hidden = screenCaptureAvailable;
       this._els.screenScreenshot.hidden = screenCaptureAvailable;
+      this._els.skipAnswer.hidden = true;
+      this._els.jumpSources.hidden = true;
       this._applyTheme();
       this._applyAccessibilityPreferences(false);
       this._renderMessages();
@@ -940,7 +950,8 @@
     _announce(text, assertive = false) {
       if (!this._els?.announcer || !text) return;
       const token = ++this._announcementToken;
-      this._els.announcer.setAttribute("aria-live", assertive ? "assertive" : "polite");
+      // Use one non-interrupting announcement channel.
+      this._els.announcer.setAttribute("aria-live", "polite");
       this._els.announcer.textContent = "";
       window.setTimeout(() => {
         if (token === this._announcementToken && this._els?.announcer) this._els.announcer.textContent = text;
@@ -979,6 +990,17 @@
         e.lessonExploreStatus.dir = e.lessonExploreStatus.lang === "ar" ? "rtl" : "ltr";
       });
       e.lessonExploreRetry.addEventListener("click", () => this._loadContent());
+      e.lessonExplore.addEventListener("toggle", () => {
+        e.lessonExploreSummary.setAttribute("aria-expanded", String(e.lessonExplore.open));
+      });
+      e.skipAnswer.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.shadowRoot.getElementById("latest-answer")?.focus();
+      });
+      e.jumpSources.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.shadowRoot.getElementById("answer-sources")?.focus();
+      });
       e.form.addEventListener("submit", (event) => this._onSubmit(event));
       this._onlineHandler = () => { this._flushQuestionQueue(); this._flushVoiceActionQueue(); };
       window.addEventListener("online", this._onlineHandler);
@@ -1256,6 +1278,12 @@
       if (message.answerStatus) div.dataset.answerStatus = message.answerStatus;
       div.dir = "auto";
       div.lang = lang;
+      if (isAssistant) {
+        this.shadowRoot.getElementById("latest-answer")?.removeAttribute("id");
+        div.id = "latest-answer";
+        div.tabIndex = -1;
+        this._els.skipAnswer.hidden = false;
+      }
 
       const author = document.createElement("div");
       author.className = "message-author";
@@ -1324,6 +1352,7 @@
           try {
             await navigator.clipboard.writeText(content.textContent || "");
             copyStatus.textContent = strings.answerCopied || en.strings.answerCopied;
+            this._announce(strings.answerCopied || en.strings.answerCopied);
           } catch {
             copyStatus.textContent = strings.copyAnswerFailed || en.strings.copyAnswerFailed;
           } finally {
@@ -1342,6 +1371,20 @@
         listen.addEventListener("click", () => this._speakText(content.textContent, lang, listenStatus));
         answerActions.append(copy, listen);
         div.append(answerActions, copyStatus, listenStatus);
+        if (typeof message.simpleText === "string" && message.simpleText.trim() && message.simpleText.trim() !== message.text.trim()) {
+          const simple = document.createElement("button");
+          simple.type = "button";
+          simple.className = "secondary simple-language-toggle";
+          simple.textContent = strings.simpleLanguage || en.strings.simpleLanguage;
+          simple.setAttribute("aria-pressed", "false");
+          simple.addEventListener("click", () => {
+            const showingSimple = simple.getAttribute("aria-pressed") === "true";
+            content.textContent = showingSimple ? message.text : message.simpleText;
+            simple.setAttribute("aria-pressed", String(!showingSimple));
+            simple.textContent = strings[showingSimple ? "simpleLanguage" : "fullLanguage"] || en.strings[showingSimple ? "simpleLanguage" : "fullLanguage"];
+          });
+          answerActions.append(simple);
+        }
       }
 
       const links = Array.isArray(message.links)
@@ -1354,7 +1397,12 @@
         link.href = source.url;
         const prefix = this._pack?.strings.readInCourse || (lang === "am" ? am.strings.readInCourse : en.strings.readInCourse);
         link.textContent = `${prefix}: ${source.title}`;
+        link.setAttribute("aria-label", `${link.textContent} (${this._pack?.strings.sourceLabel || en.strings.sourceLabel}: ${source.title})`);
         div.appendChild(link);
+      }
+      if (isAssistant && links.length) {
+        div.querySelector(".course-link")?.setAttribute("id", "answer-sources");
+        this._els.jumpSources.hidden = false;
       }
 
       if (isAssistant && message.type !== "system") {
@@ -1422,10 +1470,13 @@
       this._els.log.appendChild(div);
       this._renderStudyPack();
       this._els.log.scrollTop = this._els.log.scrollHeight;
-      if (persist) {
-        const announcement = message.role === "user"
-          ? `${this._pack?.strings.questionSubmitted || en.strings.questionSubmitted}: ${message.text}`
-          : `${authorName}: ${message.text}`;
+      if (persist && isAssistant) {
+        const source = links[0]?.title;
+        const announcement = message.answerStatus === "not_found"
+          ? (this._pack?.strings.notFoundAnnouncement || en.strings.notFoundAnnouncement)
+          : source
+            ? `${this._pack?.strings.answerReady || en.strings.answerReady}. ${this._pack?.strings.sourceAnnouncement || en.strings.sourceAnnouncement}: ${source}`
+            : (this._pack?.strings.answerReady || en.strings.answerReady);
         this._announce(announcement);
       }
 
@@ -1444,7 +1495,8 @@
           score: message.score,
           showPerson: message.showPerson,
           cachedCourseContent: message.cachedCourseContent,
-          answerStatus: message.answerStatus
+          answerStatus: message.answerStatus,
+          simpleText: message.simpleText
         });
         this._save();
       }
@@ -1591,6 +1643,8 @@
       e.localeStatus.lang = pack.lang;
       e.localeStatus.hidden = !e.localeStatus.textContent;
       write(e.greeting, "greeting");
+      write(e.skipAnswer, "skipAnswer");
+      write(e.jumpSources, "jumpSources");
       if (this._translationUnavailable) e.greeting.textContent += ` ${s.translationUnavailable || en.strings.translationUnavailable}`;
       write(e.label, "questionLabel");
       e.questionHelp.textContent = s.questionHelp || en.strings.questionHelp;
@@ -1657,6 +1711,7 @@
       e.panel.dir = pack.dir || "ltr";
       e.launcher.disabled = false;
       e.languageSelect.value = pack.lang;
+      e.lessonExploreSummary.setAttribute("aria-expanded", String(e.lessonExplore.open));
       e.checkTutorReply.hidden = !this._pendingTutorTicketId;
       this._updateEscalationReasonState();
       this._renderLearnerTickets();
@@ -1917,7 +1972,7 @@
           ? result.sources.filter((source) => typeof source?.url === "string" && source.url)
             .map((source) => ({ url: source.url, title: source.title || source.type || "Source" }))
           : [];
-        this._appendMessage({ role: "assistant", text: result.answer, lang: language,
+        this._appendMessage({ role: "assistant", text: result.answer, simpleText: result.simpleAnswer, lang: language,
           links, answerStatus: result.answerStatus,
           showPerson: ["not_found", "off_topic"].includes(result.answerStatus) });
         return { ok: true, retryable: false };
@@ -1980,6 +2035,7 @@
       this._appendMessage({
         role: "assistant",
         text,
+        simpleText: typeof detail.simpleAnswer === "string" ? detail.simpleAnswer : "",
         lang: typeof detail.language === "string" ? detail.language : language,
         links,
         answerStatus,
@@ -2015,7 +2071,9 @@
 
     _appendOfflineSaved(language) {
       const strings = this._pack?.strings || en.strings;
-      this._appendMessage({ role: "assistant", text: strings.offlineSaved || en.strings.offlineSaved, lang: language });
+      const text = strings.offlineSaved || en.strings.offlineSaved;
+      this._appendMessage({ role: "assistant", text, lang: language });
+      this._announce(strings.offlineAnnouncement || en.strings.offlineAnnouncement);
     }
 
     async _onSubmit(event) {
@@ -3061,6 +3119,8 @@
         try { localStorage.setItem(this._pendingTutorKey, this._pendingTutorTicketId); } catch { /* Keep reply checks available until the page closes. */ }
         e.checkTutorReply.hidden = false;
         e.escalationStatus.textContent = `${this._pack.strings.escalationSent} ${this._ticketReference(result.ticketId)}`;
+        const tutorAnnouncement = (this._pack.strings.tutorRequestSent || en.strings.tutorRequestSent).replace("{ticketId}", result.ticketId);
+        this._announce(tutorAnnouncement);
         this._emit("escalated", { ticketId: result.ticketId });
         e.escalationNote.value = "";
         e.escalationReason.value = "";

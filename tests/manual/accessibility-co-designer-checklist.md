@@ -108,6 +108,16 @@ Record whether the co-designer completed the entire sequence without tester assi
 
 ## Keyboard only
 
+### New 2026-11-21 checks
+
+- With NVDA, TalkBack, and VoiceOver in separate runs, confirm the polite announcement reports “Answer ready”, the descriptive source, “Not found in this course”, “Offline, question saved, will retry”, and the tutor code without moving focus while typing.
+- Use a braille display with each screen reader. Confirm the answer is plain text, the source link names the lesson section, Copy reports “Copied”, and no meaning depends on color, sound, animation, or an icon.
+- In Amharic, inspect the component and each answer for `lang="am"`; repeat in Arabic and confirm `dir="rtl"`. Record rendering, pronunciation, and braille observations rather than inferring language quality from attributes.
+- Ask the deaf or hard-of-hearing co-designer to complete the typed question, source, and tutor handoff task with sound muted. Confirm the transcript is visible, tutor status is Waiting/Answered/Closed with its code, and no step requires a phone call or audio.
+- If a short answer is supplied, toggle Simple language and confirm the shorter text is visible, reversible, and understandable. Record when no shorter answer is available.
+
+These checks are manual evidence to collect, not automated or conformance sign-off. Keep each result as completed independently / completed with help / not completed.
+
 1. Reload. Use Tab until the launcher is focused; confirm its focus outline is easy to see and the target is at least 44 by 44 CSS pixels. Press Enter or Space.
 2. Confirm focus moves to the chat heading. Press Tab through Close, Talk to a person, the accommodation action, language choices, question field, voice controls, and Send in that order. Do not use a mouse.
 3. Confirm you can still Tab to and activate a page link while the non-modal chat is open. Press Escape from inside the chat and again after tabbing to a page control. Confirm the panel closes and focus returns to the launcher.

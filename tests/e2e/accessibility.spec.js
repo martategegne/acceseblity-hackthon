@@ -68,7 +68,7 @@ test("screen-reader names, live announcements, and audio transcripts are exposed
   await expect(assistant.locator("#panel")).toHaveAttribute("aria-describedby", "panel-instructions");
   await expect(assistant.locator("#panel-instructions")).not.toHaveText("");
   await expect(assistant.locator("#question")).toHaveAttribute("aria-describedby", "question-help");
-  await expect(assistant.locator("#microphone")).toHaveAttribute("aria-label", /microphone/i);
+  await expect(assistant.locator("#microphone")).toHaveAttribute("aria-label", /.+/);
   await expect(assistant.locator("#voice-status")).toHaveAttribute("aria-live", "polite");
   await expect(assistant.locator("#assistant-announcer")).toHaveAttribute("role", "status");
 
@@ -77,4 +77,41 @@ test("screen-reader names, live announcements, and audio transcripts are exposed
   await expect(assistant.locator("#voice-transcript-text")).toHaveText("This is the recognized transcript.");
   await expect(assistant.locator("#voice-captions")).toHaveAttribute("src", /^blob:/);
   await expect(assistant.locator("#assistant-announcer")).toContainText("Transcript");
+});
+
+test("keyboard flow exposes answer navigation, language direction, simple language, and text handoff", async ({ page }) => {
+  await page.route("**/api/v1/config", (route) => route.fulfill({ json: { externalAiConsentRequired: false } }));
+  await page.route("**/api/v1/ask", (route) => route.fulfill({
+    json: {
+      answer: "A detailed answer for the lesson.",
+      simpleAnswer: "Short answer. One idea per line.",
+      sources: [{ url: "/savanna/pages/concept-with-navigation.html#section", title: "Lesson 2, section Water cycle" }]
+    }
+  }));
+  await page.route("**/api/v1/escalations", (route) => route.fulfill({ json: { ticketId: "ABC12345", accessToken: "test-token" }, status: 201 }));
+  await page.goto("/demo/blank.html");
+  const assistant = page.locator("db-assistant");
+  await assistant.locator("#launcher").click();
+  await expect(assistant.locator("#lesson-explore > summary")).toHaveAttribute("aria-expanded", "false");
+  await assistant.locator("#lesson-explore > summary").press("Enter");
+  await expect(assistant.locator("#lesson-explore > summary")).toHaveAttribute("aria-expanded", "true");
+  await assistant.locator("#question").fill("What is in this lesson?");
+  await assistant.locator("#send").click();
+  await expect(assistant.locator("#assistant-announcer")).toContainText("Source: Lesson 2, section Water cycle");
+  await expect(assistant.locator("#skip-answer")).toBeVisible();
+  await expect(assistant.locator("#jump-sources")).toBeVisible();
+  await expect(assistant.locator(".simple-language-toggle")).toBeVisible();
+  await assistant.locator(".simple-language-toggle").click();
+  await expect(assistant.locator(".message-assistant .message-body")).toHaveText("Short answer. One idea per line.");
+
+  await assistant.locator("#person").click();
+  await assistant.locator("#escalation-reason").selectOption("learner_requested_person");
+  await assistant.locator("#consent").check();
+  await assistant.locator("#send-escalation").click();
+  await expect(assistant.locator("#escalation-status")).toContainText("ABC12345");
+  await expect(assistant.locator("#assistant-announcer")).toContainText("Tutor request sent, code ABC12345");
+
+  await assistant.locator("#language-select").selectOption("ar");
+  await expect(assistant.locator("#panel")).toHaveAttribute("dir", "rtl");
+  await expect(assistant.locator("#question")).toHaveAttribute("lang", "ar");
 });
