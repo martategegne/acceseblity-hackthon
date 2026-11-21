@@ -5,53 +5,361 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Learn at Your Own Pace — Savanna</title>
   <style>
+    :root {
+      --ink: #16302f;
+      --muted: #55706d;
+      --deep: #123e3b;
+      --deep-soft: #1b514d;
+      --teal: #0f766e;
+      --teal-soft: #e7f4f1;
+      --mint: #f3faf8;
+      --line: #d6e5e1;
+      --card: #ffffff;
+      --shadow: 0 18px 45px rgba(18, 62, 59, 0.09);
+    }
+
     * { box-sizing: border-box; }
-    body { margin: 0; background: #fdfdfd; color: #1a1a1a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
-    .site-header { background: #002b56; color: #fff; padding: 8px 16px; }
-    .site-nav { display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 900px; margin: 0 auto; }
-    .site-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 8px; border-radius: 4px; color: #fff; text-decoration: underline; text-underline-offset: 3px; }
-    .site-nav a:hover, .site-nav a:focus-visible { background: #174b78; }
-    :focus-visible { outline: 3px solid #b04a00; outline-offset: 3px; }
-    .page { max-width: 800px; margin: 32px auto; padding: 0 20px 80px; }
-    h1 { margin: 0 0 12px; color: #002b56; font-size: clamp(1.75rem, 5vw, 2.4rem); line-height: 1.2; }
-    h2 { margin: 28px 0 12px; color: #0f172a; font-size: 1.5rem; line-height: 1.3; }
-    p { margin: 0 0 16px; color: #334155; }
-    .topics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
-    .topics li { padding: 16px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
-    .topics a, .page-link { color: #003f79; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-    .topics p { margin: 8px 0 0; }
-    @media (max-width: 480px) { .page { margin-block: 20px; padding-inline: 16px; } }
+    html { scroll-behavior: smooth; }
+    body {
+      min-width: 320px;
+      margin: 0;
+      background: #f7fbfa;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid #4bb7a7; outline-offset: 4px; }
+
+    .site-header {
+      color: #fff;
+      background: linear-gradient(115deg, var(--deep), #1a5a55);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    }
+    .site-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      max-width: 1180px;
+      min-height: 76px;
+      margin: 0 auto;
+      padding: 14px 28px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: #fff;
+      font-size: 1.15rem;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.13);
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+    .site-nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .site-nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 8px 12px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 0.88rem;
+      text-decoration: none;
+      transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+    }
+    .site-nav a:hover,
+    .site-nav a:focus-visible,
+    .site-nav a[aria-current="page"] {
+      border-color: rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.13);
+      color: #fff;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 56px 28px 96px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      gap: 42px;
+      align-items: stretch;
+      padding: clamp(28px, 5vw, 58px);
+      border: 1px solid #cfe4df;
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at 87% 18%, rgba(113, 194, 180, 0.25), transparent 30%),
+        linear-gradient(135deg, #eef9f6 0%, #f9fcfb 68%);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 18px;
+      color: var(--teal);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      width: 26px;
+      height: 2px;
+      border-radius: 999px;
+      background: currentColor;
+      content: "";
+    }
+    h1,
+    h2 { letter-spacing: -0.04em; }
+    h1 {
+      max-width: 680px;
+      margin: 0 0 20px;
+      color: var(--deep);
+      font-size: clamp(2.2rem, 5vw, 4.35rem);
+      line-height: 1.03;
+    }
+    .hero-copy {
+      max-width: 630px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.15rem);
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+    .button,
+    .page-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 10px 17px;
+      border-radius: 12px;
+      font-size: 0.92rem;
+      font-weight: 750;
+      text-decoration: none;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+    .button:hover,
+    .page-link:hover { transform: translateY(-2px); }
+    .button-primary,
+    .page-link {
+      color: #fff;
+      background: var(--teal);
+      box-shadow: 0 10px 20px rgba(15, 118, 110, 0.18);
+    }
+    .button-primary:hover,
+    .button-primary:focus-visible,
+    .page-link:hover,
+    .page-link:focus-visible { background: #0b655f; }
+    .button-secondary {
+      border: 1px solid var(--line);
+      color: var(--deep);
+      background: rgba(255, 255, 255, 0.74);
+    }
+    .button-secondary:hover,
+    .button-secondary:focus-visible { background: #fff; }
+    .hero-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 230px;
+      padding: 24px;
+      border: 1px solid rgba(15, 118, 110, 0.17);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+    .hero-card-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    .hero-card-number {
+      margin: 14px 0 0;
+      color: var(--deep);
+      font-size: clamp(3rem, 7vw, 5rem);
+      font-weight: 800;
+      letter-spacing: -0.08em;
+      line-height: 1;
+    }
+    .hero-card-note { margin: 10px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 78px 0 24px;
+    }
+    .section-heading h2 { margin: 0; color: var(--deep); font-size: clamp(1.75rem, 4vw, 2.6rem); line-height: 1.1; }
+    .section-heading p { max-width: 420px; margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .topics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .topics li {
+      display: flex;
+      min-height: 230px;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 23px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 6px 20px rgba(18, 62, 59, 0.035);
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+    .topics li:hover { border-color: #91c7be; box-shadow: 0 14px 30px rgba(18, 62, 59, 0.1); transform: translateY(-3px); }
+    .topic-number {
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      margin-bottom: 24px;
+      border-radius: 10px;
+      color: var(--teal);
+      background: var(--teal-soft);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .topics a {
+      color: var(--deep);
+      font-size: 1.07rem;
+      font-weight: 760;
+      line-height: 1.3;
+      text-decoration: none;
+    }
+    .topics a:hover { color: var(--teal); text-decoration: underline; text-underline-offset: 4px; }
+    .topics p { margin: 10px 0 20px; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
+    .topic-arrow { margin-top: auto; color: var(--teal); font-size: 1.25rem; font-weight: 800; }
+
+    .help {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 28px;
+      align-items: center;
+      margin-top: 78px;
+      padding: 28px 30px;
+      border: 1px solid #c5e0da;
+      border-radius: 20px;
+      background: var(--mint);
+    }
+    .help h2 { margin: 0 0 7px; color: var(--deep); font-size: 1.45rem; }
+    .help p { max-width: 650px; margin: 0; color: var(--muted); }
+    .help .page-link { white-space: nowrap; }
+
+    @media (max-width: 860px) {
+      .site-header-inner { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .site-nav { justify-content: flex-start; }
+      .hero { grid-template-columns: 1fr; gap: 26px; }
+      .hero-card { min-height: 180px; }
+      .topics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      .site-header-inner { padding: 12px 16px 16px; }
+      .site-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+      .site-nav a { justify-content: center; padding-inline: 8px; text-align: center; }
+      .page { padding: 28px 16px 72px; }
+      .hero { padding: 26px 20px; border-radius: 20px; }
+      h1 { font-size: clamp(2.2rem, 13vw, 3.3rem); }
+      .hero-actions { align-items: stretch; flex-direction: column; }
+      .button { width: 100%; }
+      .section-heading { align-items: flex-start; flex-direction: column; gap: 10px; margin-top: 58px; }
+      .topics { grid-template-columns: 1fr; }
+      .topics li { min-height: 195px; }
+      .help { grid-template-columns: 1fr; margin-top: 58px; padding: 24px 20px; }
+      .help .page-link { width: 100%; }
+    }
   </style>
 </head>
 <body>
   <header class="site-header">
-    <nav class="site-nav" aria-label="Savanna pages">
+    <div class="site-header-inner">
+      <a class="brand" href="homepage-v1-self-paced.html" aria-label="Savanna learning home">
+        <span class="brand-mark" aria-hidden="true">s</span>
+        <span>savanna learning</span>
+      </a>
+      <nav class="site-nav" aria-label="Savanna pages">
       <a href="homepage-v1-paced.html">Guided path</a>
-      <a href="homepage-v1-self-paced.html" aria-current="page">Learn at your own pace</a>
-      <a href="concept-with-navigation.html">Course lesson</a>
+      <a href="homepage-v1-self-paced.html" aria-current="page">Home</a>
+      <a href="concept-with-navigation.html#what-is-shaping-the-future-of-va-work">Start lesson</a>
       <a href="jobs.html">Test jobs</a>
-    </nav>
+      </nav>
+    </div>
   </header>
   <main class="page">
-    <h1>Explore virtual assistant work at your own pace</h1>
-    <p>Choose any topic that interests you. There is no required order, timer, or progress tracking on this demo page.</p>
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Start here</p>
+        <h1 id="page-title">Learn the skills you need, one short lesson at a time.</h1>
+        <p class="hero-copy">Start with the recommended first lesson, or jump to any topic. When a question comes up, ask Savanna or request a human tutor.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="concept-with-navigation.html#what-is-shaping-the-future-of-va-work">Start the first lesson <span aria-hidden="true">→</span></a>
+          <a class="button button-secondary" href="#topics">Browse all topics</a>
+        </div>
+      </div>
+      <aside class="hero-card" aria-label="Course overview">
+        <div>
+          <span class="hero-card-label">Your simple learning path</span>
+          <p class="hero-card-number">05</p>
+        </div>
+        <p class="hero-card-note">Start · read · ask · continue. Five short topics about technology, human skills, and remote work.</p>
+      </aside>
+    </section>
+
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Choose your next step</p>
+        <h2 id="topics-heading">Pick up where you need help</h2>
+      </div>
+      <p>New here? Start with topic 1. Already know what you need? Choose any topic and open it directly in the course.</p>
+    </div>
     <section id="topics" aria-labelledby="topics-heading">
-      <h2 id="topics-heading">Choose a course topic</h2>
       <ul class="topics">
-        <li><a href="concept-with-navigation.html#what-is-shaping-the-future-of-va-work">What is shaping the future of VA work?</a><p>See how technology and remote work are changing the field.</p></li>
-        <li><a href="concept-with-navigation.html#artificial-intelligence-and-the-future-of-va-work">Artificial intelligence and VA work</a><p>Learn about AI tools and the tasks they can support.</p></li>
-        <li><a href="concept-with-navigation.html#what-clients-are-likely-to-value-more-and-more">What clients value</a><p>Explore the human skills clients appreciate.</p></li>
-        <li><a href="concept-with-navigation.html#what-this-means-for-aspiring-virtual-assistants">Advice for aspiring virtual assistants</a><p>Review skills to build when entering the field.</p></li>
-        <li><a href="concept-with-navigation.html#so-is-the-future-of-va-promising">Is the future promising?</a><p>Read about opportunities for skilled virtual assistants.</p></li>
+        <li><span class="topic-number" aria-hidden="true">01</span><a href="concept-with-navigation.html#what-is-shaping-the-future-of-va-work">What is shaping the future of VA work?</a><p>See how technology and remote work are changing the field.</p><span class="topic-arrow" aria-hidden="true">↗</span></li>
+        <li><span class="topic-number" aria-hidden="true">02</span><a href="concept-with-navigation.html#artificial-intelligence-and-the-future-of-va-work">Artificial intelligence and VA work</a><p>Learn about AI tools and the tasks they can support.</p><span class="topic-arrow" aria-hidden="true">↗</span></li>
+        <li><span class="topic-number" aria-hidden="true">03</span><a href="concept-with-navigation.html#what-clients-are-likely-to-value-more-and-more">What clients value</a><p>Explore the human skills clients appreciate.</p><span class="topic-arrow" aria-hidden="true">↗</span></li>
+        <li><span class="topic-number" aria-hidden="true">04</span><a href="concept-with-navigation.html#what-this-means-for-aspiring-virtual-assistants">Advice for aspiring virtual assistants</a><p>Review skills to build when entering the field.</p><span class="topic-arrow" aria-hidden="true">↗</span></li>
+        <li><span class="topic-number" aria-hidden="true">05</span><a href="concept-with-navigation.html#so-is-the-future-of-va-promising">Is the future promising?</a><p>Read about opportunities for skilled virtual assistants.</p><span class="topic-arrow" aria-hidden="true">↗</span></li>
       </ul>
     </section>
-    <section aria-labelledby="help-heading">
-      <h2 id="help-heading">Need help?</h2>
-      <p>Open the learning assistant to ask about the lesson or request help from a tutor.</p>
-      <a class="page-link" href="concept-with-navigation.html">Open the course lesson</a>
+    <section class="help" aria-labelledby="help-heading">
+      <div>
+        <h2 id="help-heading">Questions are part of learning.</h2>
+        <p>Open the learning assistant to ask about a lesson, listen to an answer, or request help from a tutor when you need a human conversation.</p>
+      </div>
+      <a class="page-link" href="concept-with-navigation.html#what-is-shaping-the-future-of-va-work">Open lesson 1 <span aria-hidden="true">→</span></a>
     </section>
   </main>
-  <script src="../../module/db-assistant.min.js"></script>
+  <script src="../../module/db-assistant.min.js?v=16"></script>
   <db-assistant lang="en"></db-assistant>
 </body>
 </html>

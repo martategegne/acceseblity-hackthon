@@ -77,6 +77,34 @@
       margin: 0 auto;
       padding: 0 28px;
     }
+    .header-start {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 16px;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      min-height: 38px;
+      padding: 7px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      color: var(--forest);
+      background: #f4f8f3;
+      font-size: .8rem;
+      font-weight: 750;
+      text-decoration: none;
+      transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+    }
+    .back-link:hover, .back-link:focus-visible {
+      border-color: #c8dfcc;
+      color: var(--forest-deep);
+      background: var(--leaf-soft);
+    }
+    .back-link-arrow { font-size: 1.05rem; line-height: 1; }
     .brand {
       display: inline-flex;
       align-items: center;
@@ -126,8 +154,30 @@
       letter-spacing: .02em;
       text-transform: none;
     }
+    .section-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 7px 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      color: var(--forest);
+      background: #f4f8f3;
+      font-size: .78rem;
+      font-weight: 750;
+      cursor: pointer;
+      transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+    }
+    .section-toggle:hover, .section-toggle:focus-visible {
+      border-color: #c8dfcc;
+      color: var(--forest-deep);
+      background: var(--leaf-soft);
+    }
+    .section-toggle-icon { font-size: 1rem; line-height: 1; }
 
     .lesson-nav-wrap { position: relative; border-top: 1px solid rgba(223, 232, 224, .8); }
+    .lesson-nav-wrap[data-open="false"] nav.lesson-nav { display: none; }
     nav.lesson-nav {
       display: flex;
       gap: 8px;
@@ -366,6 +416,7 @@
       line-height: 1.24;
       letter-spacing: -.03em;
       text-wrap: balance;
+      scroll-margin-top: 145px;
     }
     .section-copy { max-width: 680px; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.78; }
     .section-arrow { position: absolute; right: 25px; bottom: 23px; color: #b8c9ba; font-size: 1.15rem; line-height: 1; }
@@ -419,9 +470,12 @@
     }
     @media (max-width: 720px) {
       .header-shell { min-height: 58px; padding-inline: 16px; }
+      .header-start { gap: 9px; }
       .header-context { gap: 8px; font-size: .68rem; }
       .header-context::before { display: none; }
+      .header-context > span:first-child, .lesson-count { display: none; }
       .lesson-count { padding: 4px 7px; }
+      .section-toggle { padding-inline: 9px; }
       nav.lesson-nav { gap: 5px; padding: 8px 16px 9px; }
       nav.lesson-nav a { gap: 6px; padding: 7px 9px; }
       .page-shell { padding-inline: 16px; }
@@ -462,18 +516,28 @@
 
   <header class="site-header">
     <div class="header-shell">
-      <a class="brand" href="homepage-v1-self-paced.html" aria-label="Savanna learning home">
-        <span class="brand-mark" aria-hidden="true">s</span>
-        <span>savanna</span>
-      </a>
+      <div class="header-start">
+        <a class="back-link" href="homepage-v1-self-paced.html" aria-label="Back to all lessons">
+          <span class="back-link-arrow" aria-hidden="true">←</span>
+          <span>Back</span>
+        </a>
+        <a class="brand" href="homepage-v1-self-paced.html" aria-label="Savanna learning home">
+          <span class="brand-mark" aria-hidden="true">s</span>
+          <span>savanna</span>
+        </a>
+      </div>
       <div class="header-context">
         <span>Course lesson</span>
         <span class="lesson-count">5 sections</span>
+        <button class="section-toggle" type="button" data-section-toggle aria-expanded="true" aria-controls="lesson-sections-nav">
+          <span class="section-toggle-icon" aria-hidden="true">☰</span>
+          <span>Sections</span>
+        </button>
       </div>
     </div>
 
-    <div class="lesson-nav-wrap">
-      <nav class="lesson-nav" aria-label="Lesson sections">
+    <div class="lesson-nav-wrap" data-open="true">
+      <nav class="lesson-nav" id="lesson-sections-nav" aria-label="Lesson sections">
         <a href="#what-is-shaping-the-future-of-va-work" data-section="section-1" aria-current="true"><span class="nav-number">01</span><span>Future of VA work</span></a>
         <a href="#artificial-intelligence-and-the-future-of-va-work" data-section="section-2"><span class="nav-number">02</span><span>Artificial intelligence</span></a>
         <a href="#what-clients-are-likely-to-value-more-and-more" data-section="section-3"><span class="nav-number">03</span><span>What clients value</span></a>
@@ -596,6 +660,18 @@
       const progressBar = document.querySelector(".reading-progress span");
       const sidebarProgress = document.querySelector(".sidebar-progress span");
       const progressLabel = document.querySelector("[data-progress-label]");
+      const sectionNavWrap = document.querySelector(".lesson-nav-wrap");
+      const sectionToggle = document.querySelector("[data-section-toggle]");
+
+      const setSectionNavOpen = (open) => {
+        if (!sectionNavWrap || !sectionToggle) return;
+        sectionNavWrap.dataset.open = String(open);
+        sectionToggle.setAttribute("aria-expanded", String(open));
+      };
+
+      sectionToggle?.addEventListener("click", () => {
+        setSectionNavOpen(sectionNavWrap.dataset.open !== "true");
+      });
 
       const setActiveSection = (sectionId) => {
         const activeIndex = cards.findIndex((card) => card.id === sectionId);
@@ -629,7 +705,7 @@
       window.addEventListener("resize", updateReadingProgress);
     })();
   </script>
-  <script src="../../module/db-assistant.min.js"></script>
+  <script src="../../module/db-assistant.min.js?v=16"></script>
   <db-assistant lang="am"></db-assistant>
 </body>
 </html>
