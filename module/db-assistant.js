@@ -98,6 +98,13 @@
       this._voiceGuideQueueIndex = 0;
       this._voiceGuideLanguage = "en";
       this._voiceGuidePinned = false;
+      this._voiceVoicesChangedHandler = () => {
+        if (!this._built) return;
+        this._refreshVoiceChoices();
+        if (this._voiceGuideEnabled && this._voiceGuideQueue.length && !window.speechSynthesis?.speaking) {
+          this._speakNextVoiceGuideChunk();
+        }
+      };
       this._voiceGuideFocusHandler = (event) => {
         const target = event.composedPath?.()[0] || event.target;
         if (!this._voiceGuideEnabled || !target || target === this) return;
@@ -137,6 +144,7 @@
       this._restoreLearnerTickets();
       this._bind();
       this.shadowRoot.addEventListener("focusin", this._voiceGuideFocusHandler);
+      window.speechSynthesis?.addEventListener?.("voiceschanged", this._voiceVoicesChangedHandler);
       this._renderQuestionQueue();
       this._loadAssistantConfig();
       this._registerServiceWorker();
@@ -151,6 +159,7 @@
       document.removeEventListener("keydown", this._escapeHandler);
       document.removeEventListener("keydown", this._shortcutHandler);
       this.shadowRoot?.removeEventListener("focusin", this._voiceGuideFocusHandler);
+      window.speechSynthesis?.removeEventListener?.("voiceschanged", this._voiceVoicesChangedHandler);
       this._stopScreenShare(false);
       try { this._recognition?.stop(); } catch { /* Recognition may already be closed. */ }
       try { if (this._mediaRecorder?.state === "recording") this._mediaRecorder.stop(); } catch { /* Recorder may already be closed. */ }
@@ -503,11 +512,13 @@
           .header-actions { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
           .accessibility-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
           .accessibility-controls button { min-width: 40px; min-height: 40px; padding: 7px 9px; }
-          .voice-guide-control { display: grid; gap: 4px; flex: 1 1 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--guide-line); border-radius: 12px; background: var(--guide-wash); }
-          .voice-guide-control button { justify-self: start; }
+          .voice-guide-control { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: min(100%, 18rem); padding: 5px 8px; border: 1px solid var(--guide-line); border-radius: 12px; background: var(--guide-wash); }
+          .voice-guide-control button { flex: 0 0 auto; }
+          .voice-guide-control .voice-guide-state { flex: 0 1 auto; }
+          .voice-guide-control .voice-guide-helper { flex: 1 1 8rem; min-width: 8rem; }
           .voice-guide-state, .voice-guide-helper { margin: 0; color: var(--guide-muted); font-size: .85em; }
-          .voice-guide-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 8px; border: 1px solid var(--guide-line); border-radius: 10px; }
-          .voice-guide-settings label { display: grid; gap: 4px; font-size: .82em; }
+          .voice-guide-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; flex: 1 1 100%; margin: 0; padding: 7px; border: 1px solid var(--guide-line); border-radius: 10px; }
+          .voice-guide-settings label { display: contents; font-size: .82em; }
           .voice-guide-settings select, .voice-guide-settings input { min-width: 0; width: 100%; }
           .voice-caption { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 2px solid var(--guide-ink); border-radius: 12px; background: var(--guide-surface); color: var(--guide-ink); }
           .voice-caption[hidden] { display: none; }
@@ -649,6 +660,7 @@
                 .panel-inner { gap: 14px; padding: 15px max(16px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
                 .header { inset-block-start: -15px; margin: -15px -16px 0; padding: 15px 16px 12px; }
                 .header-actions { gap: 5px; }
+                .voice-guide-control { flex: 1 1 100%; }
                 .person { max-width: 9rem; }
                 .log { max-height: min(34dvh, 22rem); }
                 .ask-card { box-shadow: none; }
@@ -1067,7 +1079,10 @@
       const preferred = this._voiceGuideSettings.voiceName
         ? voices.find((voice) => voice.name === this._voiceGuideSettings.voiceName && voice.lang.toLowerCase().startsWith(code))
         : null;
-      return preferred || voices.find((voice) => voice.lang.toLowerCase().split("-")[0] === code) || null;
+      // Some browsers expose voices asynchronously and many do not ship a voice
+      // for every supported guide language. Use the system default as a fallback
+      // so the guide still speaks instead of silently stopping.
+      return preferred || voices.find((voice) => voice.lang.toLowerCase().split("-")[0] === code) || voices.find((voice) => voice.default) || voices[0] || null;
     }
 
     _voiceMissingText(language) {
@@ -1111,16 +1126,10 @@
         return;
       }
       window.speechSynthesis.cancel();
-      const voice = this._voiceForLanguage(language);
-      if (!voice) {
-        const missing = this._voiceMissingText(language);
-        this._caption(missing);
-        this._announce(missing, false, false);
-        return;
-      }
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = this._voiceLanguageTag(language);
-      utterance.voice = voice;
+      const voice = this._voiceForLanguage(language);
+      if (voice) utterance.voice = voice;
       utterance.rate = this._voiceGuideSettings.rate;
       utterance.volume = this._voiceGuideSettings.volume;
       this._els.voiceGuidePause.hidden = false;
@@ -1132,6 +1141,7 @@
         else this._els.voiceGuidePause.hidden = true;
       };
       utterance.onerror = () => { this._els.voiceGuidePause.hidden = true; };
+      window.speechSynthesis.resume?.();
       window.speechSynthesis.speak(utterance);
     }
 
