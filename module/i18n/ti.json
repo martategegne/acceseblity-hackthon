@@ -185,6 +185,8 @@
     "voiceGuideOn": "መምርሒ ድምጺ፦ ኣብ",
     "voiceGuideOff": "መምርሒ ድምጺ፦ ጠፍአ",
     "voiceGuideHelper": "ኣንባቢ ስክሪን ትጥቀም እንተኾንካ፣ ድምጺ ክደጋገም ከይከውን ነዚ ኣጥፍኦ። ኣቋራጭ፦ Alt+V።",
+    "voiceGuideSettings": "ቅንብር ድምጺ",
+    "voiceGuideSettingsHide": "ቅንብር ድምጺ ሓብእ",
     "voiceGuideRate": "ፍጥነት ዘረባ",
     "voiceGuideVolume": "መጠን ድምጺ",
     "voiceGuideVoice": "ምርጫ ድምጺ",

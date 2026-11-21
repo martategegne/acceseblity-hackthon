@@ -91,6 +91,7 @@
       this._announcementToken = 0;
       this._speechStatusNode = null;
       this._voiceGuideEnabled = false;
+      this._voiceGuideExpanded = false;
       this._voiceGuideSettings = { rate: 1, volume: 1, voiceName: "" };
       this._voiceGuideTimer = null;
       this._voiceGuideFocusTimer = null;
@@ -512,8 +513,10 @@
           .header-actions { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
           .accessibility-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
           .accessibility-controls button { min-width: 40px; min-height: 40px; padding: 7px 9px; }
-          .voice-guide-control { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: min(100%, 18rem); padding: 5px 8px; border: 1px solid var(--guide-line); border-radius: 12px; background: var(--guide-wash); }
+          .voice-guide-control { display: grid; gap: 6px; min-width: 0; max-width: 100%; padding: 5px 8px; border: 1px solid var(--guide-line); border-radius: 12px; background: var(--guide-wash); }
+          .voice-guide-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
           .voice-guide-control button { flex: 0 0 auto; }
+          .voice-guide-expand { max-width: 100%; }
           .voice-guide-control .voice-guide-state { flex: 0 1 auto; }
           .voice-guide-control .voice-guide-helper { flex: 1 1 8rem; min-width: 8rem; }
           .voice-guide-state, .voice-guide-helper { margin: 0; color: var(--guide-muted); font-size: .85em; }
@@ -693,8 +696,11 @@
                 <button type="button" class="person" id="person"></button>
                 <div class="voice-guide-control" role="group" aria-labelledby="voice-guide-label">
                   <span class="accessibility-label sr-only" id="voice-guide-label"></span>
-                  <button type="button" class="secondary" id="voice-guide-toggle" role="switch" aria-checked="false"></button>
-                  <p class="voice-guide-state" id="voice-guide-state"></p>
+                  <div class="voice-guide-summary">
+                    <button type="button" class="secondary" id="voice-guide-toggle" role="switch" aria-checked="false"></button>
+                    <p class="voice-guide-state" id="voice-guide-state"></p>
+                    <button type="button" class="secondary voice-guide-expand" id="voice-guide-expand" aria-expanded="false" aria-controls="voice-guide-settings"></button>
+                  </div>
                   <p class="voice-guide-helper" id="voice-guide-helper"></p>
                   <div class="voice-guide-settings" id="voice-guide-settings" hidden>
                     <label for="voice-guide-rate" id="voice-guide-rate-label"></label>
@@ -913,7 +919,7 @@
         cloudConsentRow: $("cloud-consent-row"), cloudConsent: $("cloud-consent"),
         cloudConsentLabel: $("cloud-consent-label"),
         send: $("send"), microphone: $("microphone"), voiceCommand: $("voice-command"), voiceGuide: $("voice-guide"), stopVoice: $("stop-voice"), readBack: $("read-back"),
-        voiceGuideLabel: $("voice-guide-label"), voiceGuideToggle: $("voice-guide-toggle"), voiceGuideState: $("voice-guide-state"), voiceGuideHelper: $("voice-guide-helper"), voiceGuideSettings: $("voice-guide-settings"),
+        voiceGuideLabel: $("voice-guide-label"), voiceGuideToggle: $("voice-guide-toggle"), voiceGuideState: $("voice-guide-state"), voiceGuideExpand: $("voice-guide-expand"), voiceGuideHelper: $("voice-guide-helper"), voiceGuideSettings: $("voice-guide-settings"),
         voiceGuideRate: $("voice-guide-rate"), voiceGuideVolume: $("voice-guide-volume"), voiceGuideVoice: $("voice-guide-voice"),
         voiceGuideRateLabel: $("voice-guide-rate-label"), voiceGuideVolumeLabel: $("voice-guide-volume-label"), voiceGuideVoiceLabel: $("voice-guide-voice-label"),
         voiceCaption: $("voice-caption"), voiceCaptionLabel: $("voice-caption-label"), voiceCaptionText: $("voice-caption-text"), voiceGuidePause: $("voice-guide-pause"), voiceGuideStop: $("voice-guide-stop"), voiceCaptionPin: $("voice-caption-pin"), voiceCaptionDismiss: $("voice-caption-dismiss"),
@@ -1129,7 +1135,14 @@
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = this._voiceLanguageTag(language);
       const voice = this._voiceForLanguage(language);
-      if (voice) utterance.voice = voice;
+      if (!voice) {
+        const missingText = this._voiceMissingText(language);
+        this._caption(missingText);
+        this._announce(missingText, false, false);
+        this._els.voiceGuidePause.hidden = true;
+        return;
+      }
+      utterance.voice = voice;
       utterance.rate = this._voiceGuideSettings.rate;
       utterance.volume = this._voiceGuideSettings.volume;
       this._els.voiceGuidePause.hidden = false;
@@ -1163,7 +1176,7 @@
       this._els.voiceGuideToggle.setAttribute("aria-label", stateText);
       this._els.voiceGuideToggle.textContent = stateText;
       this._els.voiceGuideState.textContent = stateText;
-      this._els.voiceGuideSettings.hidden = !this._voiceGuideEnabled;
+      this._els.voiceGuideSettings.hidden = !this._voiceGuideEnabled || !this._voiceGuideExpanded;
       this._els.voiceGuideHelper.textContent = strings.voiceGuideHelper;
       if (!this._voiceGuideEnabled) {
         this._stopVoiceGuide();
@@ -1176,6 +1189,20 @@
         this._caption(strings.voiceGuideOn);
         this._announce(strings.voiceGuideOn);
       }
+    }
+
+    _setVoiceGuideExpanded(expanded) {
+      this._voiceGuideExpanded = Boolean(expanded);
+      const strings = this._pack?.strings || en.strings;
+      const button = this._els?.voiceGuideExpand;
+      if (!button) return;
+      const label = this._voiceGuideExpanded
+        ? (strings.voiceGuideSettingsHide || en.strings.voiceGuideSettingsHide)
+        : (strings.voiceGuideSettings || en.strings.voiceGuideSettings);
+      button.setAttribute("aria-expanded", String(this._voiceGuideExpanded));
+      button.setAttribute("aria-label", label);
+      button.textContent = label;
+      if (this._els.voiceGuideSettings) this._els.voiceGuideSettings.hidden = !this._voiceGuideEnabled || !this._voiceGuideExpanded;
     }
 
     _refreshVoiceChoices() {
@@ -1297,6 +1324,7 @@
       e.voiceCommand.addEventListener("click", () => this._startVoiceCommand());
       e.voiceGuide.addEventListener("click", () => this._loadVoiceGuide());
       e.voiceGuideToggle.addEventListener("click", () => this._toggleVoiceGuide());
+      e.voiceGuideExpand.addEventListener("click", () => this._setVoiceGuideExpanded(!this._voiceGuideExpanded));
       e.voiceGuideRate.addEventListener("input", () => { this._voiceGuideSettings.rate = Number(e.voiceGuideRate.value); this._persistAccessibilityPreferences(); });
       e.voiceGuideVolume.addEventListener("input", () => { this._voiceGuideSettings.volume = Number(e.voiceGuideVolume.value); this._persistAccessibilityPreferences(); });
       e.voiceGuideVoice.addEventListener("change", () => { this._voiceGuideSettings.voiceName = e.voiceGuideVoice.value; this._persistAccessibilityPreferences(); });
@@ -1922,7 +1950,7 @@
       const s = pack.strings;
       const e = this._els;
       const write = (node, key) => {
-        node.textContent = s[key] || "";
+        node.textContent = s[key] || en.strings[key] || "";
         node.lang = pack.lang;
       };
       write(e.launcher, "launcher");
@@ -1932,6 +1960,7 @@
       write(e.close, "close");
       write(e.person, "person");
       write(e.voiceGuideLabel, "voiceGuideLabel");
+      write(e.voiceGuideExpand, this._voiceGuideExpanded ? "voiceGuideSettingsHide" : "voiceGuideSettings");
       write(e.voiceGuideHelper, "voiceGuideHelper");
       write(e.voiceGuideRateLabel, "voiceGuideRate");
       write(e.voiceGuideVolumeLabel, "voiceGuideVolume");
@@ -1946,7 +1975,9 @@
       e.voiceGuideToggle.textContent = voiceGuideStateText;
       e.voiceGuideToggle.setAttribute("aria-checked", String(this._voiceGuideEnabled));
       e.voiceGuideState.textContent = this._voiceGuideEnabled ? s.voiceGuideOn : s.voiceGuideOff;
-      e.voiceGuideSettings.hidden = !this._voiceGuideEnabled;
+      e.voiceGuideExpand.setAttribute("aria-expanded", String(this._voiceGuideExpanded));
+      e.voiceGuideExpand.setAttribute("aria-label", (this._voiceGuideExpanded ? s.voiceGuideSettingsHide : s.voiceGuideSettings) || en.strings.voiceGuideSettings);
+      e.voiceGuideSettings.hidden = !this._voiceGuideEnabled || !this._voiceGuideExpanded;
       e.voiceGuideRate.value = String(this._voiceGuideSettings.rate);
       e.voiceGuideVolume.value = String(this._voiceGuideSettings.volume);
       e.voiceGuideVoice.setAttribute("aria-label", s.voiceGuideVoice || en.strings.voiceGuideVoice);

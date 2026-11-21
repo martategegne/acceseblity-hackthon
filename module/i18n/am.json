@@ -186,6 +186,8 @@
     "voiceGuideOn": "የድምፅ መመሪያ፦ ክፍት",
     "voiceGuideOff": "የድምፅ መመሪያ፦ ዝግ",
     "voiceGuideHelper": "ስክሪን አንባቢ የሚጠቀሙ ከሆነ ድምፅ ሁለት ጊዜ እንዳይነበብ ይህን ዝግ ያድርጉ። የቁልፍ አቋራጭ፦ Alt+V።",
+    "voiceGuideSettings": "የድምፅ ቅንብሮች",
+    "voiceGuideSettingsHide": "የድምፅ ቅንብሮችን ደብቅ",
     "voiceGuideRate": "የንግግር ፍጥነት",
     "voiceGuideVolume": "የንግግር ድምፅ መጠን",
     "voiceGuideVoice": "የድምፅ ምርጫ",

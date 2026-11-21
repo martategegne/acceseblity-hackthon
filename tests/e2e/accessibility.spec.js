@@ -144,6 +144,13 @@ test("voice guide is opt-in, persists, and captions every mocked utterance", asy
   });
   await expect(assistant.locator("#voice-guide-toggle")).toHaveAttribute("aria-checked", "true");
   await expect(assistant.locator("#voice-guide-toggle")).toContainText("On");
+  await expect(assistant.locator("#voice-guide-settings")).toBeHidden();
+  await expect(assistant.locator("#voice-guide-expand")).toHaveAttribute("aria-expanded", "false");
+  await assistant.locator("#voice-guide-expand").click();
+  await expect(assistant.locator("#voice-guide-settings")).toBeVisible();
+  await expect(assistant.locator("#voice-guide-expand")).toHaveAttribute("aria-expanded", "true");
+  await assistant.locator("#voice-guide-expand").click();
+  await expect(assistant.locator("#voice-guide-settings")).toBeHidden();
   await assistant.locator("#send").focus();
   await expect.poll(() => assistant.evaluate(() => window.__voiceGuideEvidence.spoken.some((text) => text === "Send, button"))).toBe(true);
   await expect(assistant.locator("#voice-caption-text")).toContainText("Send, button");

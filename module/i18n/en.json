@@ -186,6 +186,8 @@
     "voiceGuideOn": "Voice guide: On",
     "voiceGuideOff": "Voice guide: Off",
     "voiceGuideHelper": "If you already use a screen reader, keep this off to avoid double speech. Keyboard shortcut: Alt+V.",
+    "voiceGuideSettings": "Voice settings",
+    "voiceGuideSettingsHide": "Hide voice settings",
     "voiceGuideRate": "Speech rate",
     "voiceGuideVolume": "Speech volume",
     "voiceGuideVoice": "Voice choice",

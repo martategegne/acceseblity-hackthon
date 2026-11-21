@@ -88,6 +88,8 @@
     "voiceGuideOn": "الدليل الصوتي: تشغيل",
     "voiceGuideOff": "الدليل الصوتي: إيقاف",
     "voiceGuideHelper": "إذا كنت تستخدم قارئ شاشة، اترك هذا الخيار متوقفاً لتجنب تكرار الكلام. الاختصار: Alt+V.",
+    "voiceGuideSettings": "إعدادات الصوت",
+    "voiceGuideSettingsHide": "إخفاء إعدادات الصوت",
     "voiceGuideRate": "سرعة الكلام",
     "voiceGuideVolume": "مستوى الكلام",
     "voiceGuideVoice": "اختيار الصوت",
