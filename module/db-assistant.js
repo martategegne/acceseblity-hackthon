@@ -131,6 +131,7 @@
       document.removeEventListener("focusin", this._rememberPageFocus, true);
       this.removeEventListener("db-assistant:answer", this._hostAnswerHandler);
       document.removeEventListener("keydown", this._escapeHandler);
+      document.removeEventListener("keydown", this._shortcutHandler);
       this._stopScreenShare(false);
       try { this._recognition?.stop(); } catch { /* Recognition may already be closed. */ }
       try { if (this._mediaRecorder?.state === "recording") this._mediaRecorder.stop(); } catch { /* Recorder may already be closed. */ }
@@ -629,7 +630,7 @@
           @media (prefers-reduced-motion: reduce) { :host, :host * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
           @media (forced-colors: active) { button, textarea, select, input, .panel, .message, .offline-queue, .study-pack, .screen-share { border: 2px solid CanvasText; } .person, #send, .person-action, .launcher { background: ButtonFace; color: ButtonText; } .course-link { color: LinkText; } }
         </style>
-        <button type="button" class="launcher" id="launcher" disabled aria-haspopup="dialog" aria-controls="panel" aria-expanded="false"></button>
+        <button type="button" class="launcher" id="launcher" disabled aria-label="Open learning assistant" aria-haspopup="dialog" aria-controls="panel" aria-expanded="false">Ask Savanna</button>
         <section class="panel" id="panel" role="dialog" aria-labelledby="panel-title" aria-describedby="panel-instructions" aria-modal="true" hidden>
           <div class="panel-inner">
             <header class="header">
@@ -1054,7 +1055,15 @@
           focusable[0].focus();
         }
       };
+      this._shortcutHandler = (event) => {
+        if (event.altKey && event.shiftKey && event.key.toLowerCase() === "a") {
+          event.preventDefault();
+          if (e.panel.hidden) this._open();
+          else this._close();
+        }
+      };
       document.addEventListener("keydown", this._escapeHandler);
+      document.addEventListener("keydown", this._shortcutHandler);
     }
 
     _restore() {
@@ -1563,6 +1572,8 @@
         node.lang = pack.lang;
       };
       write(e.launcher, "launcher");
+      e.launcher.setAttribute("aria-label", s.launcher || "Open learning assistant");
+      e.launcher.title = s.launcher || "Open learning assistant";
       write(e.title, "dialogTitle");
       write(e.close, "close");
       write(e.person, "person");
@@ -2584,17 +2595,38 @@
       }
     }
 
-    _speakText(text, language, statusNode) {
+    _findSpeechVoice(language) {
       const languageTags = { en: "en-US", am: "am-ET", ti: "ti-ET", om: "om-ET", so: "so-SO", ar: "ar-SA" };
       const lang = languageTags[language] || languageTags.en;
+      const languageCode = lang.split("-")[0].toLowerCase();
+      const find = () => (window.speechSynthesis.getVoices?.() || [])
+        .find((item) => (item.lang || "").toLowerCase().split("-")[0] === languageCode);
+      const immediate = find();
+      if (immediate) return Promise.resolve({ voice: immediate, lang });
+      return new Promise((resolve) => {
+        let finished = false;
+        const complete = () => {
+          if (finished) return;
+          finished = true;
+          window.speechSynthesis.removeEventListener?.("voiceschanged", onVoicesChanged);
+          window.clearTimeout(timeout);
+          resolve({ voice: find(), lang });
+        };
+        const onVoicesChanged = () => complete();
+        const timeout = window.setTimeout(complete, 1200);
+        window.speechSynthesis.addEventListener?.("voiceschanged", onVoicesChanged, { once: true });
+      });
+    }
+
+    async _speakText(text, language, statusNode) {
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
         this._announce(statusNode.textContent, true);
         return;
       }
-      const languageCode = lang.split("-")[0].toLowerCase();
-      const voice = (window.speechSynthesis.getVoices?.() || [])
-        .find((item) => (item.lang || "").toLowerCase().split("-")[0] === languageCode);
+      statusNode.textContent = this._pack?.strings.speechStarted || en.strings.speechStarted;
+      this._announce(statusNode.textContent);
+      const { voice, lang } = await this._findSpeechVoice(language);
       if (!voice) {
         statusNode.textContent = this._pack?.strings.noSpeechVoice || en.strings.noSpeechVoice;
         this._announce(statusNode.textContent, true);
@@ -2618,8 +2650,6 @@
         this._announce(statusNode.textContent, true);
         if (!this._voiceMode) this._els.stopVoice.hidden = true;
       };
-      statusNode.textContent = this._pack?.strings.speechStarted || en.strings.speechStarted;
-      this._announce(statusNode.textContent);
       window.speechSynthesis.speak(utterance);
     }
 
